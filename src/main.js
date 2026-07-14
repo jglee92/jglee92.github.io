@@ -196,23 +196,18 @@ class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', () => this.handleInput())
     this.input.keyboard.on('keydown-SPACE', () => this.handleInput())
 
-    // 테스트용 (배포 전 제거): 1=운석 티어, 2=은하 티어 미리보기
-    // 상점(state==='shop')이 열려있을 땐 같은 숫자키가 스킨/불꽃 선택으로 쓰이므로 겹치지 않게 막는다.
+    // 숫자키는 상점(state==='shop')에서만 스킨/불꽃 선택으로 쓰인다.
     this.input.keyboard.on('keydown-ONE', () => {
       if (this.state === 'shop') this.selectCurrent(0)
-      else this.debugSetScore(METEOR_TIER_SCORE + 5)
     })
     this.input.keyboard.on('keydown-TWO', () => {
       if (this.state === 'shop') this.selectCurrent(1)
-      else this.debugSetScore(GALAXY_TIER_SCORE + 5)
     })
     this.input.keyboard.on('keydown-THREE', () => {
       if (this.state === 'shop') this.selectCurrent(2)
-      else this.debugSetScore(SHOOTING_STAR_SCORE + 50)
     })
     this.input.keyboard.on('keydown-FOUR', () => {
       if (this.state === 'shop') this.selectCurrent(3)
-      else this.debugSetScore(DODGEBALL_SCALE * 2)
     })
     this.input.keyboard.on('keydown-FIVE', () => {
       if (this.state === 'shop') this.selectCurrent(4)
@@ -226,10 +221,6 @@ class GameScene extends Phaser.Scene {
     })
     this.input.keyboard.on('keydown-Q', () => {
       if (this.state === 'shop') this.toggleShopTab()
-    })
-    // 테스트용 (배포 전 제거): 블랙홀 지대 미리보기
-    this.input.keyboard.on('keydown-B', () => {
-      if (this.state !== 'shop') this.debugSetScore(BLACKHOLE_TIER_SCORE + 5)
     })
 
     this.input.keyboard.on('keydown-C', () => this.tryContinue())
@@ -1839,13 +1830,6 @@ class GameScene extends Phaser.Scene {
     this.obstacleSpeed = OBSTACLE_SPEED_START + (OBSTACLE_SPEED_MAX - OBSTACLE_SPEED_START) * t
     this.spawnInterval = SPAWN_INTERVAL_START - (SPAWN_INTERVAL_START - SPAWN_INTERVAL_MIN) * t
     this.spawnTimer.delay = this.spawnInterval
-  }
-
-  debugSetScore(value) {
-    this.score = value
-    this.scoreText.setText(String(this.score))
-    if (this.score >= GALAXY_TIER_SCORE) this.activateGalaxyTier()
-    this.updateDifficultyFromScore()
   }
 
   update(time, delta) {
