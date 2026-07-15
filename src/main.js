@@ -192,7 +192,7 @@ class GameScene extends Phaser.Scene {
     super('GameScene')
   }
 
-  create() {
+  create(data) {
     this.state = 'ready'
     this.score = 0
     this.bestScore = Number(localStorage.getItem(BEST_SCORE_KEY) || 0)
@@ -310,6 +310,12 @@ class GameScene extends Phaser.Scene {
     })
 
     this.scheduleShootingStar()
+
+    // "다시 하시겠습니까?"에서 "예"를 누르면 재시작과 동시에 바로 플레이로 들어간다
+    // (대기화면에서 또 한 번 탭할 필요 없이 바로 이어서 할 수 있게).
+    if (data && data.autoStart) {
+      this.startGame()
+    }
   }
 
   // ---------- 배경: 별 + 은하 네뷸라 ----------
@@ -645,10 +651,12 @@ class GameScene extends Phaser.Scene {
     this.hintText.setVisible(false)
     this.subMessageText.setVisible(false)
     this.streakText.setVisible(false)
-    this.shopHintText.setVisible(false)
-    this.manualLinkText.setVisible(false)
-    this.equippedSkinIcon.setVisible(false)
-    this.equippedFlameIcon.setVisible(false)
+    this.titleText.setVisible(false)
+    this.subtitleText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
+    this.manualButtonBg.setVisible(false)
+    this.manualButtonText.setVisible(false)
     this.renderShop()
   }
 
@@ -662,10 +670,13 @@ class GameScene extends Phaser.Scene {
     this.hintText.setVisible(true)
     this.subMessageText.setVisible(true)
     this.streakText.setVisible(true)
-    this.shopHintText.setVisible(true)
-    this.manualLinkText.setVisible(true)
-    this.equippedSkinIcon.setVisible(true)
-    this.equippedFlameIcon.setVisible(true)
+    this.titleText.setVisible(true)
+    this.subtitleText.setVisible(true)
+    this.shopButtonBg.setVisible(true)
+    this.shopButtonText.setVisible(true)
+    this.shopButtonText.setText(`🛒 상점\n🪙 ${this.totalCoins}`)
+    this.manualButtonBg.setVisible(true)
+    this.manualButtonText.setVisible(true)
   }
 
   toggleShopTab() {
@@ -688,15 +699,31 @@ class GameScene extends Phaser.Scene {
     }
 
     const title = this.add
-      .text(GAME_WIDTH / 2, 62, `🛒 상점   🪙 ${this.totalCoins}`, { ...style, fontSize: '20px', align: 'center' })
+      .text(GAME_WIDTH / 2, 56, `🛒 상점   🪙 ${this.totalCoins}`, { ...style, fontSize: '19px', align: 'center' })
       .setOrigin(0.5)
     this.shopTexts.push(title)
 
+    // 첫 화면(대기화면)에 커스터마이징 미리보기를 두는 건 의미가 없다는 후기가 있어서,
+    // 대신 상점에서 지금 장착 중인 로켓/불꽃을 바로 보여준다.
+    const equipY = 80
+    const equipLabel = this.add
+      .text(GAME_WIDTH / 2 - 70, equipY, '현재 장착', { ...style, fontSize: '11px', color: '#9999aa' })
+      .setOrigin(0.5)
+    this.shopTexts.push(equipLabel)
+    const equipSkinIcon = this.add
+      .image(GAME_WIDTH / 2 - 20, equipY, this.ensureSkinPreviewTexture(this.getEquippedSkin()))
+      .setOrigin(0.5)
+    this.shopTexts.push(equipSkinIcon)
+    const equipFlameIcon = this.add
+      .image(GAME_WIDTH / 2 + 25, equipY, this.ensureFlamePreviewTexture(this.getEquippedFlame()))
+      .setOrigin(0.5)
+    this.shopTexts.push(equipFlameIcon)
+
     // 탭을 하나로 합친 토글 텍스트는 어느 게 현재 탭인지 구분이 잘 안 된다는 후기가 있어서,
     // 버튼 두 개로 나누고 각각 직접 눌러서 바로 그 탭으로 이동하게 한다.
-    const tabY = 88
+    const tabY = 104
     const tabWidth = 150
-    const tabHeight = 28
+    const tabHeight = 26
     const tabDefs = [
       { key: 'rocket', label: '🚀 로켓 스킨', x: GAME_WIDTH / 2 - tabWidth / 2 - 4 },
       { key: 'flame', label: '🔥 불꽃 색상', x: GAME_WIDTH / 2 + tabWidth / 2 + 4 },
@@ -724,9 +751,9 @@ class GameScene extends Phaser.Scene {
     const rocketBonus = this.getRocketBonusPercent()
     const flameBonus = this.getFlameBonusPercent()
     const bonusRow = this.add
-      .text(GAME_WIDTH / 2, 116, `🎁 아이템 확률 보너스   로켓 +${rocketBonus}%   불꽃 +${flameBonus}%`, {
+      .text(GAME_WIDTH / 2, 128, `🎁 아이템 확률 보너스   로켓 +${rocketBonus}%   불꽃 +${flameBonus}%`, {
         ...style,
-        fontSize: '12px',
+        fontSize: '11px',
         align: 'center',
       })
       .setOrigin(0.5)
@@ -736,7 +763,7 @@ class GameScene extends Phaser.Scene {
     const equippedId = this.shopTab === 'rocket' ? this.getEquippedSkinId() : this.getEquippedFlameId()
     const isOwned = (id) => (this.shopTab === 'rocket' ? this.isSkinOwned(id) : this.isFlameOwned(id))
 
-    const listTop = 146
+    const listTop = 148
     // 해금 조건이 둘 다 있는 잠긴 아이템은 "또는" 줄까지 3줄이 되어 기본 줄 간격(54px)을
     // 넘칠 수 있어서, 아이템마다 실제 줄 수에 맞춰 다음 줄 위치를 누적 계산한다.
     let rowY = listTop
@@ -782,7 +809,7 @@ class GameScene extends Phaser.Scene {
       this.shopTexts.push(row)
 
       const totalLines = statusLines.length + 1
-      rowY += Math.max(50, totalLines * (smallFont ? 15 : 20) + 14)
+      rowY += Math.max(48, totalLines * (smallFont ? 14 : 18) + 6)
     })
 
     const closeLine = this.add
@@ -823,7 +850,6 @@ class GameScene extends Phaser.Scene {
 
     this.setEquippedSkin(skin.id)
     this.regenerateRocketTextures(true)
-    this.refreshEquippedPreviewIcons()
     this.renderShop()
   }
 
@@ -852,7 +878,6 @@ class GameScene extends Phaser.Scene {
 
     this.setEquippedFlame(flame.id)
     this.regenerateRocketTextures(true)
-    this.refreshEquippedPreviewIcons()
     this.renderShop()
   }
 
@@ -1637,6 +1662,14 @@ class GameScene extends Phaser.Scene {
 
     this.scoreText = this.add.text(GAME_WIDTH / 2, 40, '0', textStyle).setOrigin(0.5)
 
+    // 처음 들어왔을 때 게임 이름을 명확하게 보여준다.
+    this.titleText = this.add
+      .text(GAME_WIDTH / 2, 100, 'CLOSE ROCKET', { ...textStyle, fontSize: '26px' })
+      .setOrigin(0.5)
+    this.subtitleText = this.add
+      .text(GAME_WIDTH / 2, 130, '(아슬로켓)', { ...textStyle, fontSize: '15px' })
+      .setOrigin(0.5)
+
     this.messageText = this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50, '탭하거나 스페이스바를 눌러 시작', {
         ...textStyle,
@@ -1676,22 +1709,30 @@ class GameScene extends Phaser.Scene {
       )
       .setOrigin(0.5)
 
-    this.shopHintText = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 95, `🪙 ${this.totalCoins}   👉 탭해서 상점 열기 (S)`, {
-        ...textStyle,
-        fontSize: '14px',
-      })
-      .setOrigin(0.5)
+    // 상점/매뉴얼 버튼을 대기화면 하단 좌우 모서리에 확실한 버튼 모양으로 배치한다.
+    const cornerY = GAME_HEIGHT - 42
+    const cornerButtonW = 128
+    const cornerButtonH = 44
+
+    this.shopButtonBg = this.add
+      .rectangle(GAME_WIDTH - 72, cornerY, cornerButtonW, cornerButtonH, 0x1a1a2e, 0.85)
+      .setStrokeStyle(2, 0x4fc3f7)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.openShop())
-    this.shopHintText.isUiButton = true
-
-    this.manualLinkText = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 120, '📖 게임 방법 다시보기', { ...textStyle, fontSize: '13px' })
+    this.shopButtonBg.isUiButton = true
+    this.shopButtonText = this.add
+      .text(GAME_WIDTH - 72, cornerY, `🛒 상점\n🪙 ${this.totalCoins}`, { ...textStyle, fontSize: '13px', align: 'center' })
       .setOrigin(0.5)
+
+    this.manualButtonBg = this.add
+      .rectangle(72, cornerY, cornerButtonW, cornerButtonH, 0x1a1a2e, 0.85)
+      .setStrokeStyle(2, 0xffe066)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.showManual())
-    this.manualLinkText.isUiButton = true
+    this.manualButtonBg.isUiButton = true
+    this.manualButtonText = this.add
+      .text(72, cornerY, '📖 게임 방법\n다시보기', { ...textStyle, fontSize: '13px', align: 'center' })
+      .setOrigin(0.5)
 
     // 게임오버 화면 전용 "이어하기" 버튼. messageText 안에 힌트 문구로만 있으면 키보드가 없는
     // 모바일에서는 누를 방법이 없어서, 탭 가능한 별도 텍스트로 분리해둔다.
@@ -1710,12 +1751,14 @@ class GameScene extends Phaser.Scene {
     // 탭하는 게임 특성상 죽자마자 다음 반사적인 탭이 그대로 재시작으로 이어져서 점수를
     // 확인할 새도 없이 넘어간다는 후기가 있었다. 화면 아무데나 탭하면 바로 재시작되던 것을
     // 없애고, "다시 하시겠습니까?" 확인 버튼(예/아니오)을 눌러야만 실제로 재시작되게 한다.
+    // "예" = 재시작과 동시에 바로 플레이 시작. "아니오" = 처음 화면(대기화면)으로만 돌아감
+    // (바로 재시작하고 싶지 않을 수도 있으니, 최고점수/상점을 볼 수 있는 화면으로 보내준다).
     this.restartYesText = this.add
       .text(GAME_WIDTH / 2 - 45, GAME_HEIGHT / 2 + 130, '✅ 예', { ...textStyle, fontSize: '18px' })
       .setOrigin(0.5)
       .setVisible(false)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.scene.restart())
+      .on('pointerdown', () => this.scene.restart({ autoStart: true }))
     this.restartYesText.isUiButton = true
 
     this.restartNoText = this.add
@@ -1723,30 +1766,23 @@ class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setVisible(false)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.hideRestartPrompt())
+      .on('pointerdown', () => this.scene.restart())
     this.restartNoText.isUiButton = true
 
-    // 실드/폭탄 인벤토리 표시 (플레이 중에만 보임). 폭탄은 탭하면 바로 씀.
+    // 실드/폭탄 인벤토리 표시 (플레이 중에만 보임). 폭탄은 탭하면 바로 씀. 한 손으로 폰을 쥐고
+    // 엄지로 조작할 때 화면 위쪽은 손이 잘 안 닿아서, 대기화면 버튼들과 같은 하단 모서리에 둔다.
     this.shieldInventoryText = this.add
-      .text(45, 40, `🛡️ ${this.shieldCount}`, { ...textStyle, fontSize: '18px' })
+      .text(72, cornerY, `🛡️ ${this.shieldCount}`, { ...textStyle, fontSize: '18px' })
       .setOrigin(0.5)
       .setVisible(false)
 
     this.bombInventoryText = this.add
-      .text(GAME_WIDTH - 45, 40, `💣 ${this.bombCount}`, { ...textStyle, fontSize: '18px', color: '#ffcc66' })
+      .text(GAME_WIDTH - 72, cornerY, `💣 ${this.bombCount}`, { ...textStyle, fontSize: '18px', color: '#ffcc66' })
       .setOrigin(0.5)
       .setVisible(false)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.useBomb())
     this.bombInventoryText.isUiButton = true
-
-    // 현재 장착 중인 로켓/불꽃을 대기화면 상단에서 바로 확인할 수 있는 미리보기.
-    this.equippedSkinIcon = this.add
-      .image(GAME_WIDTH / 2 - 20, 80, this.ensureSkinPreviewTexture(this.getEquippedSkin()))
-      .setOrigin(0.5)
-    this.equippedFlameIcon = this.add
-      .image(GAME_WIDTH / 2 + 20, 80, this.ensureFlamePreviewTexture(this.getEquippedFlame()))
-      .setOrigin(0.5)
 
     // 표지(대기화면) 다음, 실제 게임 시작 전에 한 번 보여주는 매뉴얼 화면. 처음 방문한
     // 사람만 자동으로 보고(localStorage 플래그), 그 다음부턴 대기화면에서 바로 시작한다.
@@ -1782,10 +1818,12 @@ class GameScene extends Phaser.Scene {
     this.hintText.setVisible(false)
     this.subMessageText.setVisible(false)
     this.streakText.setVisible(false)
-    this.shopHintText.setVisible(false)
-    this.manualLinkText.setVisible(false)
-    this.equippedSkinIcon.setVisible(false)
-    this.equippedFlameIcon.setVisible(false)
+    this.titleText.setVisible(false)
+    this.subtitleText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
+    this.manualButtonBg.setVisible(false)
+    this.manualButtonText.setVisible(false)
     this.manualTitleText.setVisible(true)
     this.manualBodyText.setVisible(true)
     this.manualContinueText.setVisible(true)
@@ -1795,11 +1833,6 @@ class GameScene extends Phaser.Scene {
     this.manualTitleText.setVisible(false)
     this.manualBodyText.setVisible(false)
     this.manualContinueText.setVisible(false)
-  }
-
-  refreshEquippedPreviewIcons() {
-    this.equippedSkinIcon.setTexture(this.ensureSkinPreviewTexture(this.getEquippedSkin()))
-    this.equippedFlameIcon.setTexture(this.ensureFlamePreviewTexture(this.getEquippedFlame()))
   }
 
   updateShieldDisplay() {
@@ -1857,13 +1890,15 @@ class GameScene extends Phaser.Scene {
     this.hintText.setVisible(false)
     this.subMessageText.setVisible(false)
     this.streakText.setVisible(false)
-    this.shopHintText.setVisible(false)
-    this.manualLinkText.setVisible(false)
+    this.titleText.setVisible(false)
+    this.subtitleText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
+    this.manualButtonBg.setVisible(false)
+    this.manualButtonText.setVisible(false)
     this.continueButtonText.setVisible(false)
     this.hideRestartPrompt()
     this.hideManual()
-    this.equippedSkinIcon.setVisible(false)
-    this.equippedFlameIcon.setVisible(false)
     this.shieldInventoryText.setVisible(true)
     this.bombInventoryText.setVisible(true)
     this.spawnTimer.paused = false
