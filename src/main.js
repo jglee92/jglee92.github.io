@@ -11,6 +11,11 @@ const GAME_HEIGHT = 600
 // 그대로 쓰면 화질이 깨진다. 이 배율만큼 더 높은 해상도로 따로 그려서 확대해도 선명하게 한다.
 const TITLE_ICON_RES_SCALE = 4
 
+// Phaser Text는 게임 전체의 resolution 설정을 자동으로 물려받지 않고, 스타일에 직접
+// resolution을 안 주면 항상 1배로 그려진다 — 그래서 canvas 자체는 고해상도로 렌더링되는데도
+// 글자만 유독 흐릿해 보였다. 모든 텍스트 스타일에 이 값을 넣어서 폰 고밀도 화면에서도 선명하게 한다.
+const TEXT_RESOLUTION = Math.min(window.devicePixelRatio || 1, 3)
+
 const GRAVITY = 1200
 const FLAP_VELOCITY = 420
 const ROCKET_HIT_RADIUS = 11
@@ -502,6 +507,7 @@ class GameScene extends Phaser.Scene {
           strokeThickness: 4,
           align: 'center',
           wordWrap: { width: GAME_WIDTH - 50 },
+          resolution: TEXT_RESOLUTION,
         })
         .setOrigin(0.5)
         .setAlpha(0)
@@ -522,6 +528,7 @@ class GameScene extends Phaser.Scene {
         color: '#ffe066',
         stroke: '#000000',
         strokeThickness: 3,
+        resolution: TEXT_RESOLUTION,
       })
       .setOrigin(0.5)
     this.tweens.add({
@@ -781,6 +788,7 @@ class GameScene extends Phaser.Scene {
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 3,
+      resolution: TEXT_RESOLUTION,
     }
 
     let cursorY = 20
@@ -1050,6 +1058,7 @@ class GameScene extends Phaser.Scene {
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 3,
+      resolution: TEXT_RESOLUTION,
     }
 
     // 겹침 문제를 계속 손으로 좌표 맞추다 어긋나서, 대신 각 줄을 "위쪽 기준(origin y=0)"으로
@@ -2037,6 +2046,7 @@ class GameScene extends Phaser.Scene {
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 4,
+      resolution: TEXT_RESOLUTION,
     }
 
     this.scoreText = this.add.text(GAME_WIDTH / 2, 40, '0', textStyle).setOrigin(0.5)
@@ -2817,7 +2827,8 @@ new Phaser.Game({
   height: GAME_HEIGHT,
   // 폰처럼 devicePixelRatio가 높은 화면에서 캔버스를 CSS로 늘려 그리면 글자가 흐릿하게
   // 보인다. 실제 프레임버퍼 해상도를 화면 배율만큼 올려서 텍스트/그래픽이 선명하게 나오게 한다.
-  resolution: Math.min(window.devicePixelRatio || 1, 3),
+  // (텍스트 스타일에 넣는 TEXT_RESOLUTION과 같은 값으로 맞춰서 캔버스/글자 해상도가 어긋나지 않게 한다.)
+  resolution: TEXT_RESOLUTION,
   backgroundColor: '#050818',
   // Phaser 기본값은 터치 포인터를 1개만 추적한다. 이 게임처럼 탭으로 날갯짓하면서
   // 동시에 화면 위 아이템도 탭해야 하는 경우, 이전 터치가 완전히 안 끝난 채로 빠르게
