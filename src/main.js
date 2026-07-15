@@ -874,8 +874,11 @@ class GameScene extends Phaser.Scene {
 
       if (this.nickname) {
         const myInfo = this.add
-          .text(GAME_WIDTH / 2, rowY, `내 닉네임: ${this.nickname}`, { ...style, fontSize: '12px', color: '#ffe066' })
+          .text(GAME_WIDTH / 2, rowY, `내 닉네임: ${this.nickname}  ✏️ 변경`, { ...style, fontSize: '12px', color: '#ffe066' })
           .setOrigin(0.5, 0)
+          .setInteractive({ useHandCursor: true })
+          .on('pointerdown', () => this.setupNicknameAndSubmit())
+        myInfo.isUiButton = true
         this.leaderboardTexts.push(myInfo)
       } else {
         const joinBtn = this.add
