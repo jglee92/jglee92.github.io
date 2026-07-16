@@ -74,6 +74,7 @@ const ACHIEVEMENTS = [
 ]
 
 const CONTINUE_AD_DURATION = 1500 // 실제 광고 SDK 연동 전까지의 자리표시자 재생 시간(ms)
+const MAX_CONTINUES_PER_RUN = 2 // 한 판당 "광고 보고 이어하기"는 최대 이만큼만 허용
 
 const COINS_KEY = 'dodgeflyer-coins'
 const OWNED_SKINS_KEY = 'dodgeflyer-owned-skins'
@@ -206,7 +207,7 @@ class GameScene extends Phaser.Scene {
     this.beatBestThisRun = false
     this.galaxyActive = false
     this.shownAchievements = new Set()
-    this.usedContinueThisRun = false
+    this.continuesUsedThisRun = 0
     this.totalCoins = Number(localStorage.getItem(COINS_KEY) || 0)
     this.nearMissTotal = Number(localStorage.getItem(NEAR_MISS_TOTAL_KEY) || 0)
     this.totalGamesPlayed = Number(localStorage.getItem(TOTAL_GAMES_KEY) || 0)
@@ -613,7 +614,7 @@ class GameScene extends Phaser.Scene {
       showRewardedAd(
         () => this.continueAfterAd(),
         () => {
-          this.usedContinueThisRun = false
+          this.continuesUsedThisRun -= 1
           this.showRestartPrompt()
         },
       )
@@ -653,7 +654,7 @@ class GameScene extends Phaser.Scene {
         // 끝까지 안 봐서 보상 없음 — 다시 시도할 수 있게 게임오버 확인 화면으로 되돌린다.
         settled = true
         fallbackTimer.remove()
-        this.usedContinueThisRun = false
+        this.continuesUsedThisRun -= 1
         this.showRestartPrompt()
       },
       adBreakDone: () => {
@@ -666,8 +667,8 @@ class GameScene extends Phaser.Scene {
   }
 
   tryContinue() {
-    if (this.state !== 'gameover' || this.usedContinueThisRun) return
-    this.usedContinueThisRun = true
+    if (this.state !== 'gameover' || this.continuesUsedThisRun >= MAX_CONTINUES_PER_RUN) return
+    this.continuesUsedThisRun += 1
     this.requestRewardedAd()
   }
 
@@ -679,11 +680,29 @@ class GameScene extends Phaser.Scene {
     this.bird.setAlpha(1)
     this.bird.setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2)
     this.bird.setVelocity(0, 0)
-    this.physics.resume()
 
-    this.messageText.setVisible(false)
     this.shieldInventoryText.setVisible(true)
     this.bombInventoryText.setVisible(true)
+
+    // 어느 광고 경로(AdMob/Ad Placement API/자리표시자)를 탔든 게임오버 화면의 나머지
+    // UI(통계, 이어하기 버튼, 예/아니오)는 다 치우고 안내 문구 하나만 남긴다.
+    this.subMessageText.setVisible(false)
+    this.continueButtonText.setVisible(false)
+    this.hideRestartPrompt()
+
+    // 광고 끄자마자 바로 게임이 재개되면 마음의 준비도 안 된 채로 장애물에 부딪힐 수 있다.
+    // 물리/스폰은 계속 멈춰둔 채로 안내 문구만 보여주고, 사용자가 직접 탭/스페이스바를 눌러야
+    // 그때 실제로 재개한다.
+    this.state = 'continue-ready'
+    this.messageText.setText(t('continueReadyMessage'))
+    this.messageText.setFontSize(22)
+    this.messageText.setY(GAME_HEIGHT / 2 - 35)
+    this.messageText.setVisible(true)
+  }
+
+  resumeAfterContinue() {
+    this.messageText.setVisible(false)
+    this.physics.resume()
     this.spawnTimer.paused = false
     this.powerupTimer.paused = false
     this.state = 'playing'
@@ -2473,6 +2492,8 @@ class GameScene extends Phaser.Scene {
       // 화면을 그냥 탭한 것만으로는 재시작되지 않는다 — "예/아니오" 확인 버튼을 다시
       // 보여줄 뿐이고, 실제 재시작은 "예" 버튼을 눌러야만 일어난다(위 isUiButton 분기).
       if (this.gameOverPromptHidden) this.showRestartPrompt()
+    } else if (this.state === 'continue-ready') {
+      this.resumeAfterContinue()
     }
   }
 
@@ -2892,7 +2913,7 @@ class GameScene extends Phaser.Scene {
 
     this.continueButtonText.setFontSize(13)
     this.continueButtonText.setY(GAME_HEIGHT / 2 - 32)
-    this.continueButtonText.setVisible(!this.usedContinueThisRun)
+    this.continueButtonText.setVisible(this.continuesUsedThisRun < MAX_CONTINUES_PER_RUN)
 
     const avgScore = this.totalGamesPlayed > 0 ? Math.round(this.totalScoreSum / this.totalGamesPlayed) : 0
     this.subMessageText.setText(

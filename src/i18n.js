@@ -115,6 +115,7 @@ export const translations = {
 
     // 게임오버 / 이어하기
     continueButtonLabel: '📺 광고 보고 이어하기',
+    continueReadyMessage: '탭하거나 스페이스바를 눌러 계속하기',
     restartYes: '✅ 예',
     restartNo: '❌ 아니오',
     gameOverTitle: '게임 오버\n다시 하시겠습니까?',
@@ -218,6 +219,7 @@ export const translations = {
     langToggleLabel: '🌐 KO/EN',
 
     continueButtonLabel: '📺 Watch ad to continue',
+    continueReadyMessage: 'Tap or press Space to continue',
     restartYes: '✅ Yes',
     restartNo: '❌ No',
     gameOverTitle: 'Game Over\nPlay again?',
