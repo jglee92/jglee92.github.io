@@ -3,6 +3,7 @@ import './style.css'
 import { initLeaderboard, isLeaderboardEnabled, submitScore, fetchTopScores, reportEntry } from './leaderboard.js'
 import { containsBannedWord } from './profanityFilter.js'
 import { t, toggleLang } from './i18n.js'
+import { initAdMob, isNativeAdsAvailable, showRewardedAd } from './adMob.js'
 
 const GAME_WIDTH = 400
 const GAME_HEIGHT = 600
@@ -232,6 +233,7 @@ class GameScene extends Phaser.Scene {
     this.nickname = localStorage.getItem(NICKNAME_KEY) || null
     initLeaderboard()
     if (typeof window.adConfig !== 'undefined') window.adConfig({ sound: 'on' })
+    initAdMob()
     this.holoHue = 0
     this.animRegenTimer = 0
     this.sparkleTimer = 0
@@ -603,10 +605,21 @@ class GameScene extends Phaser.Scene {
     })
   }
 
-  // 리워드 광고 재생을 시도한다. Ad Placement API가 없거나(스크립트 차단 등), 계정이 아직
-  // 이 광고 유형 서빙 승인 전이라 광고 자체를 못 띄우면(beforeReward가 한 번도 안 불림)
-  // 자리표시자로 대체해서 "이어하기" 흐름 자체는 끊기지 않게 한다.
+  // 리워드 광고 재생을 시도한다. 앱(Capacitor 네이티브)에서는 AdMob을, 웹에서는 Ad
+  // Placement API를 쓴다. 둘 다 광고 자체를 못 띄우는 상황(스크립트 차단, 계정 승인
+  // 전 등)이면 자리표시자로 대체해서 "이어하기" 흐름 자체는 끊기지 않게 한다.
   requestRewardedAd() {
+    if (isNativeAdsAvailable()) {
+      showRewardedAd(
+        () => this.continueAfterAd(),
+        () => {
+          this.usedContinueThisRun = false
+          this.showRestartPrompt()
+        },
+      )
+      return
+    }
+
     if (typeof window.adBreak === 'undefined') {
       this.playPlaceholderAd(() => this.continueAfterAd())
       return

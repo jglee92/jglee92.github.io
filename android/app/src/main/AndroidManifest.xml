@@ -33,6 +33,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- 실제 AdMob 계정 만들면 이 값을 진짜 앱 ID로 바꿔야 한다.
+             지금은 구글이 공식 제공하는 테스트 전용 App ID(누구나 써도 되는 값). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
     </application>
 
     <!-- Permissions -->
