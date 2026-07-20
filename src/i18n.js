@@ -145,13 +145,13 @@ export const translations = {
     hubComingSoonTitle: '준비중',
     hubComingSoonDesc: '다음 게임을 준비하고 있어요',
     hubButtonLabel: '🏠 허브',
-    hubGameFishingTitle: 'CLOSE FISHING',
+    hubGameFishingTitle: '아슬낚시',
     hubGameFishingDesc: '누르면 내려가고 떼면 올라와요. 물고기를 낚아 코인을 모으세요',
     hubGameBlockTitle: 'CLOSE PUZZLE',
     hubGameBlockDesc: '블록을 채워 가로/세로 줄을 완성하세요',
 
-    // CLOSE FISHING
-    fishingReadyTitle: '🎣 CLOSE FISHING',
+    // 아슬낚시 (영문 브랜드명: CLOSE FISHING)
+    fishingReadyTitle: '🎣 아슬낚시',
     fishingReadyDesc: (p) => `누르고 있으면 바늘이 내려가고, 떼면 올라와요.\n물고기를 낚아 수면 위로 가져오면 코인 획득!\n보유 코인: ${p.coins}   최고 수확: ${p.best}`,
     fishingReadyCta: '👉 탭하거나 스페이스바로 시작',
     fishingUpgradeLabel: (p) => `🎣 낚싯대 강화 (${p.cost}코인)`,

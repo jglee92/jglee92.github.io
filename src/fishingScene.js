@@ -78,6 +78,15 @@ export class FishingScene extends Phaser.Scene {
       },
     })
 
+    this.bubbles = []
+    this.wavePhase = 0
+    this.bubbleSpawnTimer = this.time.addEvent({
+      delay: 450,
+      loop: true,
+      paused: true,
+      callback: () => this.spawnBubble(),
+    })
+
     if (data && data.autoStart) this.startGame()
   }
 
@@ -85,8 +94,40 @@ export class FishingScene extends Phaser.Scene {
     const bg = this.add.graphics()
     bg.fillGradientStyle(0x1e5a8a, 0x1e5a8a, 0x02121f, 0x02121f, 1)
     bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT)
-    bg.fillStyle(0x6b4423, 1)
-    bg.fillRect(0, 50, GAME_WIDTH, 24)
+    // 배를 나중에 추가하면 이 파도 위에서 출렁이게 하고, 그 흔들림을 낚싯줄에도 전달해서
+    // 난이도 요소로 쓸 수 있게 될 것. 지금은 정적인 부두 막대 대신 움직이는 수면을 보여준다.
+    this.waveGraphics = this.add.graphics()
+    this.drawWave()
+  }
+
+  drawWave() {
+    const g = this.waveGraphics
+    const bandTop = DOCK_Y - 6
+    const bandBottom = DOCK_Y + 16
+    const amp = 4
+    const freq = 0.05
+    const points = []
+    for (let x = 0; x <= GAME_WIDTH; x += 10) {
+      points.push({ x, y: bandTop + Math.sin(x * freq + this.wavePhase) * amp })
+    }
+    g.clear()
+    g.fillStyle(0x2a72a0, 0.95)
+    g.fillPoints([...points, { x: GAME_WIDTH, y: bandBottom }, { x: 0, y: bandBottom }], true)
+    g.lineStyle(2, 0xbfe6ff, 0.55)
+    g.beginPath()
+    points.forEach((p, i) => (i === 0 ? g.moveTo(p.x, p.y) : g.lineTo(p.x, p.y)))
+    g.strokePath()
+  }
+
+  spawnBubble() {
+    if (this.state !== 'playing') return
+    const x = Phaser.Math.Between(20, GAME_WIDTH - 20)
+    const startY = Phaser.Math.Between(DOCK_Y + 40, this.maxDepthForTier())
+    const radius = Phaser.Math.Between(2, 5)
+    const bubble = this.add.circle(x, startY, radius, 0xbfe6ff, 0.35).setStrokeStyle(1, 0xffffff, 0.4)
+    bubble.riseSpeed = Phaser.Math.Between(30, 60)
+    bubble.driftX = Phaser.Math.FloatBetween(-8, 8)
+    this.bubbles.push(bubble)
   }
 
   createUI() {
@@ -241,6 +282,7 @@ export class FishingScene extends Phaser.Scene {
 
     this.fishSpawnTimer.paused = false
     this.hazardSpawnTimer.paused = false
+    this.bubbleSpawnTimer.paused = false
   }
 
   getFishInterval() {
@@ -373,8 +415,20 @@ export class FishingScene extends Phaser.Scene {
       g.lineBetween(gx, cy - h * 0.25, gx - 2, cy + h * 0.25)
     }
 
+    // 입을 벌린 모습 — 위턱/아래턱 사이에 붉은 입안과 이빨을 넣어서 위협적으로 보이게 한다.
+    const jawBaseX = cx + w / 2 - 4
+    const jawTipX = cx + w / 2 + 16
+    g.fillStyle(0x7a1f1f, 1)
+    g.fillTriangle(jawBaseX, cy - 1, jawBaseX, cy + 1, jawTipX - 4, cy)
+    g.fillStyle(0x4a5a63, 1)
+    g.fillTriangle(jawBaseX, cy - 9, jawTipX, cy - 1, jawBaseX, cy - 1)
     g.fillStyle(0xe8e8e8, 1)
-    g.fillTriangle(cx + w / 2 - 6, cy - 4, cx + w / 2 + 14, cy, cx + w / 2 - 6, cy + 8)
+    g.fillTriangle(jawBaseX, cy + 1, jawTipX, cy + 2, jawBaseX, cy + 9)
+    g.fillStyle(0xffffff, 1)
+    for (let i = 0; i < 3; i++) {
+      const tx = jawBaseX + 3 + i * 5
+      g.fillTriangle(tx, cy - 1.5, tx + 3, cy - 1.5, tx + 1.5, cy + 1.5)
+    }
     g.fillStyle(0x0a0a0a, 1)
     g.fillCircle(cx + w / 2 - 14, cy - 6, 3)
     g.generateTexture(key, canvasW, canvasH)
@@ -424,8 +478,11 @@ export class FishingScene extends Phaser.Scene {
     this.state = 'roundOver'
     this.fishSpawnTimer.paused = true
     this.hazardSpawnTimer.paused = true
+    this.bubbleSpawnTimer.paused = true
     this.fishGroup.children.each((f) => this.destroyFish(f))
     this.hazardGroup.children.each((h) => this.destroyHazard(h))
+    this.bubbles.forEach((b) => b.destroy())
+    this.bubbles = []
     this.lineGraphics.clear()
     this.hookGraphics.clear()
     this.tripText.setVisible(false)
@@ -528,8 +585,14 @@ export class FishingScene extends Phaser.Scene {
   }
 
   update(time, delta) {
-    if (this.state !== 'playing') return
     const dt = delta / 1000
+
+    // 파도는 대기 화면에서도 계속 움직이게 해서 항상 생동감 있어 보이게 한다(플레이 중에만
+    // 도는 아래 로직과 분리해서 이 앞에 둔다).
+    this.wavePhase += dt * 1.6
+    this.drawWave()
+
+    if (this.state !== 'playing') return
     const maxDepth = this.maxDepthForTier()
 
     if (this.holding) {
@@ -541,9 +604,31 @@ export class FishingScene extends Phaser.Scene {
     this.lineGraphics.clear()
     this.lineGraphics.lineStyle(2, 0xe8f4ff, 0.85)
     this.lineGraphics.lineBetween(GAME_WIDTH / 2, DOCK_Y, GAME_WIDTH / 2, this.hookY)
+
+    // 낚싯바늘 — 단순 원 대신 낚싯바늘 특유의 J자 곡선 + 미늘로 그린다.
+    const hx = GAME_WIDTH / 2
+    const hy = this.hookY
     this.hookGraphics.clear()
-    this.hookGraphics.lineStyle(3, 0xdddddd, 1)
-    this.hookGraphics.strokeCircle(GAME_WIDTH / 2, this.hookY, 6)
+    this.hookGraphics.lineStyle(2.5, 0xdddddd, 1)
+    this.hookGraphics.beginPath()
+    this.hookGraphics.moveTo(hx, hy - 12)
+    this.hookGraphics.lineTo(hx, hy - 3)
+    this.hookGraphics.lineTo(hx + 3, hy + 3)
+    this.hookGraphics.lineTo(hx + 7, hy + 6)
+    this.hookGraphics.lineTo(hx + 9, hy + 3)
+    this.hookGraphics.lineTo(hx + 8, hy - 1)
+    this.hookGraphics.strokePath()
+    this.hookGraphics.lineBetween(hx + 8, hy - 1, hx + 10.5, hy - 2)
+
+    this.bubbles = this.bubbles.filter((bubble) => {
+      bubble.y -= bubble.riseSpeed * dt
+      bubble.x += bubble.driftX * dt * 0.3
+      if (bubble.y <= DOCK_Y) {
+        bubble.destroy()
+        return false
+      }
+      return true
+    })
 
     if (this.tripValue > 0) {
       this.tripText.setText(`+${this.tripValue}`).setPosition(GAME_WIDTH / 2 + 22, this.hookY).setVisible(true)

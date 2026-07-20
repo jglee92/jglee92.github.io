@@ -2965,17 +2965,21 @@ new Phaser.Game({
   parent: 'app',
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
-  // 폰처럼 devicePixelRatio가 높은 화면에서 캔버스를 CSS로 늘려 그리면 글자가 흐릿하게
-  // 보인다. 실제 프레임버퍼 해상도를 화면 배율만큼 올려서 텍스트/그래픽이 선명하게 나오게 한다.
-  // (텍스트 스타일에 넣는 TEXT_RESOLUTION과 같은 값으로 맞춰서 캔버스/글자 해상도가 어긋나지 않게 한다.)
-  resolution: TEXT_RESOLUTION,
   backgroundColor: '#050818',
   // Phaser 기본값은 터치 포인터를 1개만 추적한다. 이 게임처럼 탭으로 날갯짓하면서
   // 동시에 화면 위 아이템도 탭해야 하는 경우, 이전 터치가 완전히 안 끝난 채로 빠르게
   // 다음 탭을 하면 두 번째 터치가 그냥 무시돼버려서 "가끔 아이템이 안 먹힌다"는 문제가
   // 생겼다. 여러 포인터를 동시에 추적하게 늘려서 이런 탭 유실을 줄인다.
+  //
+  // keyboard.capture: 스페이스바는 브라우저 기본 동작이 "페이지 아래로 스크롤"이다.
+  // #about 섹션을 추가해서 페이지 자체가 스크롤 가능해진 뒤로, 게임 중 스페이스바를 누르면
+  // 브라우저가 게임 화면을 페이지 아래로 스크롤시켜버리는 문제가 생겼다. 캡처 목록에 넣어서
+  // 이 키가 브라우저 기본 동작으로 새지 않고 게임에서만 쓰이게 막는다.
   input: {
     activePointers: 3,
+    keyboard: {
+      capture: [Phaser.Input.Keyboard.KeyCodes.SPACE],
+    },
   },
   physics: {
     default: 'arcade',
