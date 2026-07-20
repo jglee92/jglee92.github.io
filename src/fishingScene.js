@@ -23,13 +23,13 @@ const UPGRADE_TIERS = [
   { cost: 400, maxDepth: 560 },
 ]
 
-// 이모지를 텍스트로 그려서 별도 텍스처 제작 없이 간단하게 표현한다(이 코드베이스가 이미
-// 이모지 UI를 광범위하게 쓰고 있어 검증된 방식). minDepth 이상 강화해야 그 구간에 출현.
+// 이모지 대신 로켓/구름/운석처럼 이 코드베이스의 방식대로 Graphics로 직접 그린 실루엣을 쓴다
+// (몸통 타원 + 꼬리/등지느러미 삼각형 + 눈). minDepth 이상 강화해야 그 구간에 출현.
 const FISH_TYPES = [
-  { emoji: '🐟', minDepth: 70, maxDepth: 260, value: 2, speed: 70 },
-  { emoji: '🐠', minDepth: 180, maxDepth: 380, value: 5, speed: 90 },
-  { emoji: '🐡', minDepth: 300, maxDepth: 480, value: 12, speed: 110 },
-  { emoji: '🦑', minDepth: 420, maxDepth: 560, value: 30, speed: 130 },
+  { id: 'small', radius: 11, body: 0x8fd3ff, fin: 0x4fc3f7, minDepth: 70, maxDepth: 260, value: 2, speed: 70 },
+  { id: 'medium', radius: 14, body: 0xffa64d, fin: 0xcc7a1a, minDepth: 180, maxDepth: 380, value: 5, speed: 90 },
+  { id: 'large', radius: 17, body: 0xffe066, fin: 0xd4a017, minDepth: 300, maxDepth: 480, value: 12, speed: 110 },
+  { id: 'rare', radius: 20, body: 0xb388ff, fin: 0x7c4dff, minDepth: 420, maxDepth: 560, value: 30, speed: 130 },
 ]
 
 export class FishingScene extends Phaser.Scene {
@@ -269,7 +269,8 @@ export class FishingScene extends Phaser.Scene {
     circle.body.setVelocity(vx, 0)
     circle.fishType = type
     circle.caught = false
-    circle.visual = this.add.text(startX, y, type.emoji, { fontSize: '22px' }).setOrigin(0.5).setFlipX(!fromLeft)
+    const textureKey = this.ensureFishTexture(type)
+    circle.visual = this.add.image(startX, y, textureKey).setOrigin(0.5).setFlipX(!fromLeft)
   }
 
   spawnHazard() {
@@ -287,7 +288,56 @@ export class FishingScene extends Phaser.Scene {
     circle.body.allowGravity = false
     circle.body.setImmovable(true)
     circle.body.setVelocity(vx, 0)
-    circle.visual = this.add.text(startX, y, '🦈', { fontSize: '26px' }).setOrigin(0.5).setFlipX(!fromLeft)
+    const textureKey = this.ensureSharkTexture()
+    circle.visual = this.add.image(startX, y, textureKey).setOrigin(0.5).setFlipX(!fromLeft)
+  }
+
+  // 물고기/상어 실루엣을 로켓/구름/운석과 같은 방식(Graphics로 한 번 그려서 텍스처로 굽고 재사용)으로
+  // 만든다 — 이모지 글리프 대신 크기/색으로 종류를 구분하는 단순하지만 일관된 실루엣.
+  ensureFishTexture(type) {
+    const key = `fish-${type.id}`
+    if (this.textures.exists(key)) return key
+    const r = type.radius
+    const w = r * 2.6
+    const h = r * 1.6
+    const canvasW = w + r * 1.4
+    const canvasH = h + r * 1.6
+    const cx = canvasW / 2
+    const cy = canvasH / 2
+    const g = this.add.graphics()
+    g.fillStyle(type.fin, 1)
+    g.fillTriangle(cx - w / 2 - r * 0.5, cy, cx - w / 2 + 2, cy - r * 0.5, cx - w / 2 + 2, cy + r * 0.5)
+    g.fillTriangle(cx - r * 0.2, cy - h / 2, cx + r * 0.3, cy - h / 2 - r * 0.4, cx + r * 0.5, cy - h / 2)
+    g.fillStyle(type.body, 1)
+    g.fillEllipse(cx, cy, w, h)
+    g.fillStyle(0x0a0a0a, 1)
+    g.fillCircle(cx + w / 2 - r * 0.5, cy - r * 0.15, r * 0.15)
+    g.generateTexture(key, canvasW, canvasH)
+    g.destroy()
+    return key
+  }
+
+  ensureSharkTexture() {
+    const key = 'fishing-hazard-shark'
+    if (this.textures.exists(key)) return key
+    const w = 70
+    const h = 28
+    const canvasW = w + 44
+    const canvasH = h + 44
+    const cx = canvasW / 2
+    const cy = canvasH / 2
+    const g = this.add.graphics()
+    g.fillStyle(0x5a6b74, 1)
+    g.fillEllipse(cx, cy, w, h)
+    g.fillTriangle(cx + w * 0.1, cy - h / 2, cx + w * 0.32, cy - h / 2 - 18, cx + w * 0.42, cy - h / 2)
+    g.fillTriangle(cx - w / 2 - 14, cy, cx - w / 2 + 4, cy - h * 0.35, cx - w / 2 + 4, cy + h * 0.35)
+    g.fillStyle(0xe8e8e8, 1)
+    g.fillTriangle(cx + w / 2 - 6, cy - 4, cx + w / 2 + 14, cy, cx + w / 2 - 6, cy + 8)
+    g.fillStyle(0x0a0a0a, 1)
+    g.fillCircle(cx + w / 2 - 14, cy - 6, 3)
+    g.generateTexture(key, canvasW, canvasH)
+    g.destroy()
+    return key
   }
 
   destroyFish(fish) {

@@ -145,13 +145,13 @@ export const translations = {
     hubComingSoonTitle: '준비중',
     hubComingSoonDesc: '다음 게임을 준비하고 있어요',
     hubButtonLabel: '🏠 허브',
-    hubGameFishingTitle: '타이니 피싱',
+    hubGameFishingTitle: 'CLOSE FISHING',
     hubGameFishingDesc: '누르면 내려가고 떼면 올라와요. 물고기를 낚아 코인을 모으세요',
-    hubGameBlockTitle: '블록 퍼즐',
+    hubGameBlockTitle: 'CLOSE PUZZLE',
     hubGameBlockDesc: '블록을 채워 가로/세로 줄을 완성하세요',
 
-    // 타이니 피싱
-    fishingReadyTitle: '🎣 타이니 피싱',
+    // CLOSE FISHING
+    fishingReadyTitle: '🎣 CLOSE FISHING',
     fishingReadyDesc: (p) => `누르고 있으면 바늘이 내려가고, 떼면 올라와요.\n물고기를 낚아 수면 위로 가져오면 코인 획득!\n보유 코인: ${p.coins}   최고 수확: ${p.best}`,
     fishingReadyCta: '👉 탭하거나 스페이스바로 시작',
     fishingUpgradeLabel: (p) => `🎣 낚싯대 강화 (${p.cost}코인)`,
@@ -164,8 +164,8 @@ export const translations = {
     fishingRoundOverBest: (p) => `최고 수확: ${p.best}코인`,
     fishingNewBest: '🎉 신기록 달성!',
 
-    // 블록 퍼즐
-    blockReadyTitle: '🧩 블록 퍼즐',
+    // CLOSE PUZZLE
+    blockReadyTitle: '🧩 CLOSE PUZZLE',
     blockReadyDesc: (p) => `블록을 끌어다 놓아 가로/세로 줄을 채우면 사라져요.\n보유 코인: ${p.coins}   최고 점수: ${p.best}`,
     blockReadyCta: '👉 탭하거나 스페이스바로 시작',
     blockScoreLabel: (p) => `점수: ${p.score}`,
@@ -284,13 +284,13 @@ export const translations = {
     hubComingSoonTitle: 'Coming Soon',
     hubComingSoonDesc: "We're working on the next game",
     hubButtonLabel: '🏠 Hub',
-    hubGameFishingTitle: 'Tiny Fishing',
+    hubGameFishingTitle: 'CLOSE FISHING',
     hubGameFishingDesc: 'Hold to descend, release to rise. Catch fish for coins',
-    hubGameBlockTitle: 'Block Puzzle',
+    hubGameBlockTitle: 'CLOSE PUZZLE',
     hubGameBlockDesc: 'Fill rows and columns with blocks to clear them',
 
-    // Tiny Fishing
-    fishingReadyTitle: '🎣 Tiny Fishing',
+    // CLOSE FISHING
+    fishingReadyTitle: '🎣 CLOSE FISHING',
     fishingReadyDesc: (p) =>
       `Hold to lower the hook, release to reel it up.\n` +
       `Bring caught fish back to the surface for coins!\n` +
@@ -306,8 +306,8 @@ export const translations = {
     fishingRoundOverBest: (p) => `Best catch: ${p.best} coins`,
     fishingNewBest: '🎉 New record!',
 
-    // Block Puzzle
-    blockReadyTitle: '🧩 Block Puzzle',
+    // CLOSE PUZZLE
+    blockReadyTitle: '🧩 CLOSE PUZZLE',
     blockReadyDesc: (p) =>
       `Drag blocks onto the grid to fill rows/columns and clear them.\nCoins: ${p.coins}   Best score: ${p.best}`,
     blockReadyCta: '👉 Tap or press Space to start',
