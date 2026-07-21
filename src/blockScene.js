@@ -5,6 +5,8 @@ import { t } from './i18n.js'
 // 로켓/피싱 게임의 localStorage 키와 겹치지 않는 이 게임만의 별도 키.
 const BLOCK_COINS_KEY = 'block-coins'
 const BLOCK_BEST_KEY = 'block-best-score'
+const BLOCK_OWNED_THEMES_KEY = 'block-owned-themes'
+const BLOCK_EQUIPPED_THEME_KEY = 'block-equipped-theme'
 
 const GRID_SIZE = 8
 const CELL = 42
@@ -18,7 +20,27 @@ const TRAY_SLOTS = [
 ]
 const TRAY_SCALE = 0.36
 
-const PALETTE = [0xff6b4a, 0x4fc3f7, 0xffe066, 0x8fd3ff, 0xb388ff, 0x69f0ae, 0xff8a80, 0xffab40]
+// 상점에서 파는 블록 색상 테마 — 기본은 무료, 나머지는 코인으로 구매/장착.
+const BLOCK_THEMES = [
+  {
+    id: 'default',
+    cost: 0,
+    nameKey: 'blockThemeDefaultName',
+    palette: [0xff6b4a, 0x4fc3f7, 0xffe066, 0x8fd3ff, 0xb388ff, 0x69f0ae, 0xff8a80, 0xffab40],
+  },
+  {
+    id: 'neon',
+    cost: 80,
+    nameKey: 'blockThemeNeonName',
+    palette: [0x39ff14, 0xff073a, 0x00f9ff, 0xff00ff, 0xffff00, 0xff8c00],
+  },
+  {
+    id: 'pastel',
+    cost: 150,
+    nameKey: 'blockThemePastelName',
+    palette: [0xffd1dc, 0xc7ceea, 0xb5ead7, 0xffdac1, 0xe2f0cb, 0xf6dfeb],
+  },
+]
 
 // 폴리오미노 오프셋 목록. 전부 (0,0)을 기준(최소 x/y)으로 정규화되어 있다.
 const SHAPES = [
@@ -59,6 +81,7 @@ export class BlockScene extends Phaser.Scene {
     this.tray = [null, null, null]
     this.ghostRects = []
     this.draggingContainer = null
+    this.shopTexts = null
 
     this.cameras.main.setBackgroundColor('#050818')
     this.createUI()
@@ -111,6 +134,15 @@ export class BlockScene extends Phaser.Scene {
       })
     this.hubButtonBg.isUiButton = true
     this.hubButtonText = this.add.text(40, 20, t('hubButtonLabel'), { ...textStyle, fontSize: '12px' }).setOrigin(0.5)
+
+    // 상점 버튼 — 허브 버튼(좌상단)과 대칭으로 우상단에 둔다.
+    this.shopButtonBg = this.add
+      .rectangle(GAME_WIDTH - 40, 20, 72, 28, 0x1a1a2e, 0.85)
+      .setStrokeStyle(2, 0x4fc3f7)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.openShop())
+    this.shopButtonBg.isUiButton = true
+    this.shopButtonText = this.add.text(GAME_WIDTH - 40, 20, t('blockShopButtonLabel'), { ...textStyle, fontSize: '12px' }).setOrigin(0.5)
 
     this.scoreText = this.add
       .text(GAME_WIDTH / 2, 95, '', { ...textStyle, fontSize: '18px' })
@@ -171,6 +203,8 @@ export class BlockScene extends Phaser.Scene {
     this.readyCtaText.setVisible(false)
     this.hubButtonBg.setVisible(false)
     this.hubButtonText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
 
     this.gridOutline.setVisible(true)
     this.scoreText.setText(t('blockScoreLabel', { score: 0 })).setVisible(true)
@@ -198,10 +232,31 @@ export class BlockScene extends Phaser.Scene {
     return container
   }
 
+  getEquippedThemeId() {
+    return localStorage.getItem(BLOCK_EQUIPPED_THEME_KEY) || 'default'
+  }
+
+  isThemeOwned(id) {
+    if (id === 'default') return true
+    const owned = JSON.parse(localStorage.getItem(BLOCK_OWNED_THEMES_KEY) || '[]')
+    return owned.includes(id)
+  }
+
+  setThemeOwned(id) {
+    const owned = JSON.parse(localStorage.getItem(BLOCK_OWNED_THEMES_KEY) || '[]')
+    if (!owned.includes(id)) owned.push(id)
+    localStorage.setItem(BLOCK_OWNED_THEMES_KEY, JSON.stringify(owned))
+  }
+
+  getEquippedPalette() {
+    const theme = BLOCK_THEMES.find((th) => th.id === this.getEquippedThemeId())
+    return (theme || BLOCK_THEMES[0]).palette
+  }
+
   fillTray() {
     TRAY_SLOTS.forEach((slot, i) => {
       const shapeDef = Phaser.Utils.Array.GetRandom(SHAPES)
-      const color = Phaser.Utils.Array.GetRandom(PALETTE)
+      const color = Phaser.Utils.Array.GetRandom(this.getEquippedPalette())
       const container = this.buildShapeContainer(shapeDef, color)
       container.setScale(TRAY_SCALE)
       container.trayX = slot.x - (container.maxX * CELL * TRAY_SCALE) / 2
@@ -369,6 +424,112 @@ export class BlockScene extends Phaser.Scene {
     this.gameOverCoinsText.setText(t('blockCoinsEarned', { coins: coinsEarned })).setVisible(true)
     this.restartYesText.setVisible(true)
     this.restartNoText.setVisible(true)
+  }
+
+  // ---------- 상점 (로켓 게임의 openShop/closeShop/renderShop 패턴 재사용) ----------
+
+  openShop() {
+    if (this.state !== 'ready') return
+    this.state = 'shop'
+    this.readyTitleText.setVisible(false)
+    this.readyDescText.setVisible(false)
+    this.readyCtaText.setVisible(false)
+    this.hubButtonBg.setVisible(false)
+    this.hubButtonText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
+    this.renderShop()
+  }
+
+  closeShop() {
+    if (this.shopTexts) {
+      this.shopTexts.forEach((obj) => obj.destroy())
+      this.shopTexts = null
+    }
+    this.state = 'ready'
+    this.readyDescText.setText(t('blockReadyDesc', { coins: this.totalCoins, best: this.bestScore }))
+    this.readyTitleText.setVisible(true)
+    this.readyDescText.setVisible(true)
+    this.readyCtaText.setVisible(true)
+    this.hubButtonBg.setVisible(true)
+    this.hubButtonText.setVisible(true)
+    this.shopButtonBg.setVisible(true)
+    this.shopButtonText.setVisible(true)
+  }
+
+  renderShop() {
+    if (this.shopTexts) this.shopTexts.forEach((obj) => obj.destroy())
+    this.shopTexts = []
+
+    const style = {
+      fontFamily: 'system-ui, sans-serif',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3,
+      resolution: TEXT_RESOLUTION,
+    }
+
+    let cursorY = 20
+    const title = this.add
+      .text(GAME_WIDTH / 2, cursorY, t('blockShopTitle', { coins: this.totalCoins }), { ...style, fontSize: '17px', align: 'center' })
+      .setOrigin(0.5, 0)
+    this.shopTexts.push(title)
+
+    const backButton = this.add
+      .text(14, cursorY, t('backButton'), { ...style, fontSize: '14px' })
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.closeShop())
+    backButton.isUiButton = true
+    this.shopTexts.push(backButton)
+    cursorY += title.height + 24
+
+    let rowY = cursorY
+    BLOCK_THEMES.forEach((theme, i) => {
+      const owned = this.isThemeOwned(theme.id)
+      const equipped = this.getEquippedThemeId() === theme.id
+      const statusLine = equipped ? t('shopEquipped') : owned ? t('shopOwned') : t('shopCost', { cost: theme.cost })
+
+      const label = `${i + 1}. ${t(theme.nameKey)}\n${statusLine}`
+      const row = this.add
+        .text(GAME_WIDTH / 2, rowY, label, { ...style, fontSize: '13px', align: 'center' })
+        .setOrigin(0.5, 0)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.selectTheme(i))
+      this.shopTexts.push(row)
+      rowY += row.height + 8
+
+      // 팔레트 미리보기 — 실제 이 테마를 쓰면 트레이 블록이 어떤 색으로 나오는지 보여준다.
+      const swatchSize = 16
+      const gap = 4
+      const totalW = theme.palette.length * (swatchSize + gap) - gap
+      let swatchX = GAME_WIDTH / 2 - totalW / 2 + swatchSize / 2
+      theme.palette.forEach((color) => {
+        const swatch = this.add.rectangle(swatchX, rowY, swatchSize, swatchSize, color, 1).setStrokeStyle(1, 0xffffff, 0.4)
+        this.shopTexts.push(swatch)
+        swatchX += swatchSize + gap
+      })
+      rowY += swatchSize + 22
+    })
+  }
+
+  selectTheme(index) {
+    if (this.state !== 'shop') return
+    const theme = BLOCK_THEMES[index]
+    if (this.getEquippedThemeId() === theme.id) return
+
+    if (!this.isThemeOwned(theme.id)) {
+      if (this.totalCoins < theme.cost) {
+        this.showFloatPopup(GAME_WIDTH / 2, 60, t('shopNotEnoughCoins'), '#ff6b4a')
+        return
+      }
+      this.totalCoins -= theme.cost
+      localStorage.setItem(BLOCK_COINS_KEY, String(this.totalCoins))
+      this.setThemeOwned(theme.id)
+    }
+
+    localStorage.setItem(BLOCK_EQUIPPED_THEME_KEY, theme.id)
+    this.renderShop()
   }
 
   showFloatPopup(x, y, text, color = '#ffe066') {

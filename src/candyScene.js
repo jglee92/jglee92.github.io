@@ -6,6 +6,8 @@ import { t } from './i18n.js'
 const CANDY_COINS_KEY = 'candy-coins'
 const CANDY_BEST_KEY = 'candy-best-score'
 const CANDY_LEVEL_KEY = 'candy-level-unlocked'
+const CANDY_OWNED_THEMES_KEY = 'candy-owned-themes'
+const CANDY_EQUIPPED_THEME_KEY = 'candy-equipped-theme'
 
 const GRID_SIZE = 8
 const CELL = 42
@@ -24,6 +26,47 @@ const TILE_NAME_KEYS = {
   shield: 'candyTileNameShield',
   star: 'candyTileNameStar',
 }
+
+// 상점에서 파는 타일 색상 테마 — 기본은 무료, 나머지는 코인으로 구매/장착.
+// 눈(fish)/반짝임(coin) 같은 흰색/검정 디테일은 테마와 무관하게 고정이라 색상표에 없다.
+const CANDY_THEMES = [
+  {
+    id: 'default',
+    cost: 0,
+    nameKey: 'candyThemeDefaultName',
+    colors: {
+      rocket: { flame: 0xff8a4f, body: 0xd8d8e2, nose: 0xd23c3c, fin: 0xb52e2e, window: 0x4fc3f7 },
+      fish: { fin: 0xd4a017, body: 0xffe066 },
+      coin: { outer: 0xd4a017, inner: 0xffe066 },
+      shield: { body: 0x1b6ca8, accent: 0x8fe3ff },
+      star: { body: 0xffd700 },
+    },
+  },
+  {
+    id: 'neon',
+    cost: 80,
+    nameKey: 'candyThemeNeonName',
+    colors: {
+      rocket: { flame: 0x39ff14, body: 0xe0e0ff, nose: 0xff073a, fin: 0xc70030, window: 0x00f9ff },
+      fish: { fin: 0xff00ff, body: 0x00f9ff },
+      coin: { outer: 0xffff00, inner: 0x39ff14 },
+      shield: { body: 0xff073a, accent: 0xffff00 },
+      star: { body: 0x00f9ff },
+    },
+  },
+  {
+    id: 'pastel',
+    cost: 150,
+    nameKey: 'candyThemePastelName',
+    colors: {
+      rocket: { flame: 0xffdac1, body: 0xf6f6f6, nose: 0xffb7b2, fin: 0xe2a8a4, window: 0xc7ceea },
+      fish: { fin: 0xe2f0cb, body: 0xffdac1 },
+      coin: { outer: 0xe2f0cb, inner: 0xfff5ba },
+      shield: { body: 0xc7ceea, accent: 0xb5ead7 },
+      star: { body: 0xf6dfeb },
+    },
+  },
+]
 
 // 레벨(단계) 구조 — 항목만 추가하면 레벨이 늘어난다.
 const LEVELS = [
@@ -54,6 +97,7 @@ export class CandyScene extends Phaser.Scene {
     this.selected = null
     this.selectHighlight = null
     this.locked = false
+    this.shopTexts = null
 
     this.cameras.main.setBackgroundColor('#1a1030')
     this.createUI()
@@ -98,11 +142,20 @@ export class CandyScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xff8a4f)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => {
-        if (this.state === 'playing') return
+        if (this.state === 'playing' || this.state === 'shop') return
         this.scene.start('HubScene')
       })
     this.hubButtonBg.isUiButton = true
     this.hubButtonText = this.add.text(40, 20, t('hubButtonLabel'), { ...textStyle, fontSize: '12px' }).setOrigin(0.5)
+
+    // 상점 버튼 — 허브 버튼(좌상단)과 대칭으로 우상단에 둔다.
+    this.shopButtonBg = this.add
+      .rectangle(GAME_WIDTH - 40, 20, 72, 28, 0x1a1a2e, 0.85)
+      .setStrokeStyle(2, 0x4fc3f7)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.openShop())
+    this.shopButtonBg.isUiButton = true
+    this.shopButtonText = this.add.text(GAME_WIDTH - 40, 20, t('candyShopButtonLabel'), { ...textStyle, fontSize: '12px' }).setOrigin(0.5)
 
     this.movesText = this.add
       .text(GAME_WIDTH / 2 - 90, 65, '', { ...textStyle, fontSize: '14px' })
@@ -181,6 +234,116 @@ export class CandyScene extends Phaser.Scene {
     this.readyCtaText.setVisible(true)
     this.hubButtonBg.setVisible(true)
     this.hubButtonText.setVisible(true)
+    this.shopButtonBg.setVisible(true)
+    this.shopButtonText.setVisible(true)
+  }
+
+  // ---------- 상점 (로켓 게임의 openShop/closeShop/renderShop 패턴 재사용) ----------
+
+  openShop() {
+    if (this.state !== 'ready') return
+    this.state = 'shop'
+    this.readyTitleText.setVisible(false)
+    this.readyLevelText.setVisible(false)
+    this.readyObjectiveText.setVisible(false)
+    this.readyStatsText.setVisible(false)
+    this.readyCtaText.setVisible(false)
+    this.hubButtonBg.setVisible(false)
+    this.hubButtonText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
+    this.renderShop()
+  }
+
+  closeShop() {
+    if (this.shopTexts) {
+      this.shopTexts.forEach((obj) => obj.destroy())
+      this.shopTexts = null
+    }
+    this.state = 'ready'
+    this.refreshReadyTexts()
+    this.readyTitleText.setVisible(true)
+    this.readyLevelText.setVisible(true)
+    this.readyObjectiveText.setVisible(true)
+    this.readyStatsText.setVisible(true)
+    this.readyCtaText.setVisible(true)
+    this.hubButtonBg.setVisible(true)
+    this.hubButtonText.setVisible(true)
+    this.shopButtonBg.setVisible(true)
+    this.shopButtonText.setVisible(true)
+  }
+
+  renderShop() {
+    if (this.shopTexts) this.shopTexts.forEach((obj) => obj.destroy())
+    this.shopTexts = []
+
+    const style = {
+      fontFamily: 'system-ui, sans-serif',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3,
+      resolution: TEXT_RESOLUTION,
+    }
+
+    let cursorY = 20
+    const title = this.add
+      .text(GAME_WIDTH / 2, cursorY, t('candyShopTitle', { coins: this.totalCoins }), { ...style, fontSize: '17px', align: 'center' })
+      .setOrigin(0.5, 0)
+    this.shopTexts.push(title)
+
+    const backButton = this.add
+      .text(14, cursorY, t('backButton'), { ...style, fontSize: '14px' })
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.closeShop())
+    backButton.isUiButton = true
+    this.shopTexts.push(backButton)
+    cursorY += title.height + 24
+
+    let rowY = cursorY
+    CANDY_THEMES.forEach((theme, i) => {
+      const owned = this.isThemeOwned(theme.id)
+      const equipped = this.getEquippedThemeId() === theme.id
+      const statusLine = equipped ? t('shopEquipped') : owned ? t('shopOwned') : t('shopCost', { cost: theme.cost })
+
+      const label = `[${i + 1}] ${t(theme.nameKey)}\n${statusLine}`
+      const row = this.add
+        .text(88, rowY, label, { ...style, fontSize: '13px' })
+        .setOrigin(0, 0)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.selectTheme(i))
+      this.shopTexts.push(row)
+
+      const rowCenterY = rowY + row.height / 2
+      const previewKey = this.ensureTileTextureForTheme('rocket', theme.id)
+      const icon = this.add
+        .image(55, rowCenterY, previewKey)
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.selectTheme(i))
+      this.shopTexts.push(icon)
+
+      rowY += Math.max(row.height, icon.height) + 14
+    })
+  }
+
+  selectTheme(index) {
+    if (this.state !== 'shop') return
+    const theme = CANDY_THEMES[index]
+    if (this.getEquippedThemeId() === theme.id) return
+
+    if (!this.isThemeOwned(theme.id)) {
+      if (this.totalCoins < theme.cost) {
+        this.showFloatPopup(GAME_WIDTH / 2, 60, t('shopNotEnoughCoins'), '#ff6b4a')
+        return
+      }
+      this.totalCoins -= theme.cost
+      localStorage.setItem(CANDY_COINS_KEY, String(this.totalCoins))
+      this.setThemeOwned(theme.id)
+    }
+
+    localStorage.setItem(CANDY_EQUIPPED_THEME_KEY, theme.id)
+    this.renderShop()
   }
 
   startGame() {
@@ -200,6 +363,8 @@ export class CandyScene extends Phaser.Scene {
     this.readyCtaText.setVisible(false)
     this.hubButtonBg.setVisible(false)
     this.hubButtonText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
 
     this.movesText.setVisible(true)
     this.scoreText.setVisible(true)
@@ -385,28 +550,62 @@ export class CandyScene extends Phaser.Scene {
     return runs
   }
 
-  // 4매치는 줄(가로/세로) 특수 타일로, 5매치 이상은 3x3 폭탄 특수 타일로 승격시킨다.
+  // 승격 규칙(캔디크러쉬 관례):
+  // - 가로 런과 세로 런이 같은 타입으로 한 칸에서 교차(L/T자 모양) → 5x5 폭탄(bomb5).
+  //   이게 개별 런 길이 판정보다 우선한다.
+  // - L/T에 안 걸린 일직선 5매치 이상 → 컬러 폭탄(colorBomb, 발동 시 그 타입 전체 제거).
+  // - L/T에 안 걸린 일직선 4매치 → 줄(가로/세로) 특수 타일.
   // 승격된 칸은 이번엔 지워지지 않고 특수 타일로 남는다.
   classifyRuns(runs, swappedCells) {
     const toClear = new Set()
     const promotions = []
     const promotedKeys = new Set()
+    const consumed = new Set()
 
-    runs.forEach((run) => {
+    const addPromotion = (cell, type, specialType) => {
+      const key = `${cell[0]},${cell[1]}`
+      if (promotedKeys.has(key)) return
+      promotedKeys.add(key)
+      promotions.push({ r: cell[0], c: cell[1], type, specialType })
+    }
+
+    const pickCell = (cells) => {
+      const swapped = swappedCells && cells.find(([r, c]) => swappedCells.some(([sr, sc]) => sr === r && sc === c))
+      return swapped || cells[Math.floor(cells.length / 2)]
+    }
+
+    // L/T자 모양: 방향이 다르고 타입이 같은 두 런이 한 칸이라도 겹치면 하나의 클러스터로 합친다.
+    for (let i = 0; i < runs.length; i++) {
+      if (consumed.has(i)) continue
+      for (let j = i + 1; j < runs.length; j++) {
+        if (consumed.has(j)) continue
+        const runA = runs[i]
+        const runB = runs[j]
+        if (runA.orientation === runB.orientation || runA.type !== runB.type) continue
+        const intersection = runA.cells.find(([r, c]) => runB.cells.some(([r2, c2]) => r2 === r && c2 === c))
+        if (!intersection) continue
+
+        consumed.add(i)
+        consumed.add(j)
+        const unionCells = new Map()
+        ;[...runA.cells, ...runB.cells].forEach(([r, c]) => unionCells.set(`${r},${c}`, [r, c]))
+        const cellsArr = Array.from(unionCells.values())
+        cellsArr.forEach(([r, c]) => toClear.add(`${r},${c}`))
+        const promoteCell =
+          (swappedCells && cellsArr.find(([r, c]) => swappedCells.some(([sr, sc]) => sr === r && sc === c))) || intersection
+        addPromotion(promoteCell, runA.type, 'bomb5')
+        break
+      }
+    }
+
+    // L/T에 안 걸린 나머지 런들 — 일직선 4/5매치 판정.
+    runs.forEach((run, idx) => {
+      if (consumed.has(idx)) return
       run.cells.forEach(([r, c]) => toClear.add(`${r},${c}`))
       if (run.cells.length >= 4) {
-        let promoteCell = swappedCells && run.cells.find(([r, c]) => swappedCells.some(([sr, sc]) => sr === r && sc === c))
-        if (!promoteCell) promoteCell = run.cells[Math.floor(run.cells.length / 2)]
-        const key = `${promoteCell[0]},${promoteCell[1]}`
-        if (!promotedKeys.has(key)) {
-          promotedKeys.add(key)
-          promotions.push({
-            r: promoteCell[0],
-            c: promoteCell[1],
-            type: run.type,
-            specialType: run.cells.length >= 5 ? 'bomb' : run.orientation === 'h' ? 'lineH' : 'lineV',
-          })
-        }
+        const promoteCell = pickCell(run.cells)
+        const specialType = run.cells.length >= 5 ? 'colorBomb' : run.orientation === 'h' ? 'lineH' : 'lineV'
+        addPromotion(promoteCell, run.type, specialType)
       }
     })
 
@@ -420,12 +619,19 @@ export class CandyScene extends Phaser.Scene {
       for (let cc = 0; cc < GRID_SIZE; cc++) cells.push([r, cc])
     } else if (special === 'lineV') {
       for (let rr = 0; rr < GRID_SIZE; rr++) cells.push([rr, c])
-    } else if (special === 'bomb') {
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
+    } else if (special === 'bomb5') {
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
           const rr = r + dr
           const cc = c + dc
           if (rr >= 0 && rr < GRID_SIZE && cc >= 0 && cc < GRID_SIZE) cells.push([rr, cc])
+        }
+      }
+    } else if (special === 'colorBomb') {
+      const targetType = this.grid[r][c]
+      for (let rr = 0; rr < GRID_SIZE; rr++) {
+        for (let cc = 0; cc < GRID_SIZE; cc++) {
+          if (this.grid[rr][cc] === targetType) cells.push([rr, cc])
         }
       }
     }
@@ -648,36 +854,38 @@ export class CandyScene extends Phaser.Scene {
   }
 
   // 캔디크러쉬 그림 대신, 이 게임 세계관의 아이콘(로켓/물고기/코인/실드/별)을 로켓/피싱과
-  // 같은 방식(Graphics로 그려서 텍스처로 굽고 캐시)으로 직접 그린다.
-  drawBaseIcon(g, type, cx, cy) {
+  // 같은 방식(Graphics로 그려서 텍스처로 굽고 캐시)으로 직접 그린다. colors는 상점에서
+  // 고른 테마의 색상 세트 — "지금 장착된" 테마에 의존하지 않게 파라미터로 받아서, 상점
+  // 미리보기에서 다른(장착 안 한) 테마도 그대로 그려볼 수 있게 한다.
+  drawBaseIcon(g, type, cx, cy, colors) {
     if (type === 'rocket') {
-      g.fillStyle(0xff8a4f, 1)
+      g.fillStyle(colors.rocket.flame, 1)
       g.fillTriangle(cx - 4, cy + 12, cx + 4, cy + 12, cx, cy + 19)
-      g.fillStyle(0xd8d8e2, 1)
+      g.fillStyle(colors.rocket.body, 1)
       g.fillEllipse(cx, cy, 13, 24)
-      g.fillStyle(0xd23c3c, 1)
+      g.fillStyle(colors.rocket.nose, 1)
       g.fillTriangle(cx - 6, cy - 11, cx + 6, cy - 11, cx, cy - 19)
-      g.fillStyle(0xb52e2e, 1)
+      g.fillStyle(colors.rocket.fin, 1)
       g.fillTriangle(cx - 6, cy + 6, cx - 12, cy + 13, cx - 6, cy + 11)
       g.fillTriangle(cx + 6, cy + 6, cx + 12, cy + 13, cx + 6, cy + 11)
-      g.fillStyle(0x4fc3f7, 1)
+      g.fillStyle(colors.rocket.window, 1)
       g.fillCircle(cx, cy - 3, 3)
     } else if (type === 'fish') {
-      g.fillStyle(0xd4a017, 1)
+      g.fillStyle(colors.fish.fin, 1)
       g.fillTriangle(cx - 13, cy, cx - 6, cy - 6, cx - 6, cy + 6)
-      g.fillStyle(0xffe066, 1)
+      g.fillStyle(colors.fish.body, 1)
       g.fillEllipse(cx + 3, cy, 20, 13)
       g.fillStyle(0x0a0a0a, 1)
       g.fillCircle(cx + 9, cy - 2, 1.6)
     } else if (type === 'coin') {
-      g.fillStyle(0xd4a017, 1)
+      g.fillStyle(colors.coin.outer, 1)
       g.fillCircle(cx, cy, 16)
-      g.fillStyle(0xffe066, 1)
+      g.fillStyle(colors.coin.inner, 1)
       g.fillCircle(cx, cy, 12)
       g.fillStyle(0xffffff, 0.8)
       g.fillTriangle(cx - 3, cy - 8, cx, cy - 2, cx - 7, cy - 2)
     } else if (type === 'shield') {
-      g.fillStyle(0x1b6ca8, 1)
+      g.fillStyle(colors.shield.body, 1)
       g.fillPoints(
         [
           { x: cx, y: cy - 16 },
@@ -689,41 +897,74 @@ export class CandyScene extends Phaser.Scene {
         ],
         true,
       )
-      g.fillStyle(0x8fe3ff, 1)
+      g.fillStyle(colors.shield.accent, 1)
       g.fillRect(cx - 2, cy - 9, 4, 16)
       g.fillRect(cx - 8, cy - 2, 16, 4)
     } else {
-      g.fillStyle(0xffd700, 1)
+      g.fillStyle(colors.star.body, 1)
       g.fillPoints(this.starPoints(cx, cy, 17, 7, 5), true)
     }
   }
 
+  getEquippedThemeId() {
+    return localStorage.getItem(CANDY_EQUIPPED_THEME_KEY) || 'default'
+  }
+
+  isThemeOwned(id) {
+    if (id === 'default') return true
+    const owned = JSON.parse(localStorage.getItem(CANDY_OWNED_THEMES_KEY) || '[]')
+    return owned.includes(id)
+  }
+
+  setThemeOwned(id) {
+    const owned = JSON.parse(localStorage.getItem(CANDY_OWNED_THEMES_KEY) || '[]')
+    if (!owned.includes(id)) owned.push(id)
+    localStorage.setItem(CANDY_OWNED_THEMES_KEY, JSON.stringify(owned))
+  }
+
   ensureTileTexture(type) {
-    const key = `candy-${type}`
+    return this.ensureTileTextureForTheme(type, this.getEquippedThemeId())
+  }
+
+  ensureTileTextureForTheme(type, themeId) {
+    const key = `candy-${themeId}-${type}`
     if (this.textures.exists(key)) return key
+    const theme = CANDY_THEMES.find((th) => th.id === themeId) || CANDY_THEMES[0]
     const size = 40
     const g = this.add.graphics()
-    this.drawBaseIcon(g, type, size / 2, size / 2)
+    this.drawBaseIcon(g, type, size / 2, size / 2, theme.colors)
     g.generateTexture(key, size, size)
     g.destroy()
     return key
   }
 
   // 특수 타일은 기반 아이콘 위에 표식을 얹어서 구분한다 — 줄 타일은 굵은 흰 줄(가로/세로),
-  // 폭탄 타일은 빛나는 이중 테두리.
+  // 5x5 폭탄은 겹친 삼중 링, 컬러 폭탄은 사방으로 뻗는 반짝임선.
   ensureSpecialTexture(type, specialType) {
-    const key = `candy-${type}-${specialType}`
+    const themeId = this.getEquippedThemeId()
+    const key = `candy-${themeId}-${type}-${specialType}`
     if (this.textures.exists(key)) return key
+    const theme = CANDY_THEMES.find((th) => th.id === themeId) || CANDY_THEMES[0]
     const size = 40
     const cx = size / 2
     const cy = size / 2
     const g = this.add.graphics()
-    this.drawBaseIcon(g, type, cx, cy)
-    if (specialType === 'bomb') {
+    this.drawBaseIcon(g, type, cx, cy, theme.colors)
+    if (specialType === 'bomb5') {
+      // 3x3 폭탄보다 "더 크게 터진다"는 느낌을 주려고 겹친 삼중 링으로 그린다.
       g.lineStyle(3, 0xffffff, 0.95)
       g.strokeCircle(cx, cy, 18)
-      g.lineStyle(1.5, 0xff4444, 0.9)
-      g.strokeCircle(cx, cy, 15)
+      g.lineStyle(2, 0xff4444, 0.9)
+      g.strokeCircle(cx, cy, 14)
+      g.lineStyle(1.5, 0xff4444, 0.7)
+      g.strokeCircle(cx, cy, 10)
+    } else if (specialType === 'colorBomb') {
+      // 폭탄과 확실히 구분되도록 사방으로 뻗는 반짝임 선으로 그린다.
+      g.lineStyle(2, 0xffffff, 0.95)
+      for (let i = 0; i < 8; i++) {
+        const ang = (Math.PI / 4) * i
+        g.lineBetween(cx + Math.cos(ang) * 12, cy + Math.sin(ang) * 12, cx + Math.cos(ang) * 19, cy + Math.sin(ang) * 19)
+      }
     } else if (specialType === 'lineH') {
       g.fillStyle(0xffffff, 0.85)
       g.fillRect(0, cy - 3, size, 6)
@@ -734,6 +975,27 @@ export class CandyScene extends Phaser.Scene {
     g.generateTexture(key, size, size)
     g.destroy()
     return key
+  }
+
+  showFloatPopup(x, y, text, color = '#ffe066') {
+    const popup = this.add
+      .text(x, y, text, {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '16px',
+        color,
+        stroke: '#000000',
+        strokeThickness: 3,
+        resolution: TEXT_RESOLUTION,
+      })
+      .setOrigin(0.5)
+    this.tweens.add({
+      targets: popup,
+      y: y - 26,
+      alpha: 0,
+      duration: 700,
+      ease: 'Cubic.easeOut',
+      onComplete: () => popup.destroy(),
+    })
   }
 
   ensureAudio() {

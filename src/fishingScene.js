@@ -47,6 +47,7 @@ export class FishingScene extends Phaser.Scene {
     this.tripValue = 0
     this.roundCoins = 0
     this.roundTimeLeft = ROUND_DURATION_MS
+    this.shopTexts = null
 
     this.drawBackground()
     this.createUI()
@@ -152,14 +153,16 @@ export class FishingScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
 
-    this.upgradeButtonBg = this.add
-      .rectangle(GAME_WIDTH / 2, 250, 240, 40, 0x1a1a2e, 0.85)
+    // 상점 버튼 — 허브 버튼(좌상단)과 대칭으로 우상단에 둔다. 낚싯대 강화는 이제 이 안의
+    // 목록에서 산다(예전엔 대기화면에 버튼 하나로 박혀있었다).
+    this.shopButtonBg = this.add
+      .rectangle(GAME_WIDTH - 40, 20, 72, 28, 0x1a1a2e, 0.85)
       .setStrokeStyle(2, 0x4fc3f7)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.purchaseUpgrade())
-    this.upgradeButtonBg.isUiButton = true
-    this.upgradeButtonText = this.add
-      .text(GAME_WIDTH / 2, 250, '', { ...textStyle, fontSize: '14px' })
+      .on('pointerdown', () => this.openShop())
+    this.shopButtonBg.isUiButton = true
+    this.shopButtonText = this.add
+      .text(GAME_WIDTH - 40, 20, t('fishingShopButtonLabel'), { ...textStyle, fontSize: '12px' })
       .setOrigin(0.5)
 
     this.readyCtaText = this.add
@@ -225,32 +228,106 @@ export class FishingScene extends Phaser.Scene {
 
   refreshReadyTexts() {
     this.readyDescText.setText(t('fishingReadyDesc', { coins: this.totalCoins, best: this.bestCatch }))
-    const nextTier = this.rodTier + 1
-    if (nextTier < UPGRADE_TIERS.length) {
-      this.upgradeButtonText.setText(t('fishingUpgradeLabel', { cost: UPGRADE_TIERS[nextTier].cost }))
-    } else {
-      this.upgradeButtonText.setText(t('fishingUpgradeMax'))
-    }
   }
 
   purchaseUpgrade() {
-    if (this.state !== 'ready') return
+    if (this.state !== 'shop') return
     const nextTier = this.rodTier + 1
     if (nextTier >= UPGRADE_TIERS.length) return
     const cost = UPGRADE_TIERS[nextTier].cost
     if (this.totalCoins < cost) {
-      this.showFloatPopup(GAME_WIDTH / 2, 290, t('shopNotEnoughCoins'), '#ff6b4a')
+      this.showFloatPopup(GAME_WIDTH / 2, 60, t('shopNotEnoughCoins'), '#ff6b4a')
       return
     }
     this.totalCoins -= cost
     this.rodTier = nextTier
     localStorage.setItem(FISHING_COINS_KEY, String(this.totalCoins))
     localStorage.setItem(FISHING_ROD_TIER_KEY, String(this.rodTier))
-    this.refreshReadyTexts()
+    this.renderShop()
   }
 
   maxDepthForTier() {
     return UPGRADE_TIERS[this.rodTier].maxDepth
+  }
+
+  // ---------- 상점 (로켓 게임의 openShop/closeShop/renderShop 패턴 재사용) ----------
+
+  openShop() {
+    if (this.state !== 'ready') return
+    this.state = 'shop'
+    this.readyTitleText.setVisible(false)
+    this.readyDescText.setVisible(false)
+    this.readyCtaText.setVisible(false)
+    this.hubButtonBg.setVisible(false)
+    this.hubButtonText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
+    this.renderShop()
+  }
+
+  closeShop() {
+    if (this.shopTexts) {
+      this.shopTexts.forEach((obj) => obj.destroy())
+      this.shopTexts = null
+    }
+    this.state = 'ready'
+    this.refreshReadyTexts()
+    this.readyTitleText.setVisible(true)
+    this.readyDescText.setVisible(true)
+    this.readyCtaText.setVisible(true)
+    this.hubButtonBg.setVisible(true)
+    this.hubButtonText.setVisible(true)
+    this.shopButtonBg.setVisible(true)
+    this.shopButtonText.setVisible(true)
+  }
+
+  renderShop() {
+    if (this.shopTexts) this.shopTexts.forEach((obj) => obj.destroy())
+    this.shopTexts = []
+
+    const style = {
+      fontFamily: 'system-ui, sans-serif',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3,
+      resolution: TEXT_RESOLUTION,
+    }
+
+    let cursorY = 20
+    const title = this.add
+      .text(GAME_WIDTH / 2, cursorY, t('fishingShopTitle', { coins: this.totalCoins }), { ...style, fontSize: '17px', align: 'center' })
+      .setOrigin(0.5, 0)
+    this.shopTexts.push(title)
+
+    const backButton = this.add
+      .text(14, cursorY, t('backButton'), { ...style, fontSize: '14px' })
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.closeShop())
+    backButton.isUiButton = true
+    this.shopTexts.push(backButton)
+    cursorY += title.height + 24
+
+    let rowY = cursorY
+    UPGRADE_TIERS.forEach((tier, i) => {
+      let statusLine
+      // 이미 지나온 단계는 탭해도 아무 반응이 없으니, "(선택)"을 붙이는 공용 shopOwned
+      // 대신 그 뉘앙스가 없는 낚시 전용 문구를 쓴다.
+      if (i < this.rodTier) statusLine = t('fishingShopPastTier')
+      else if (i === this.rodTier) statusLine = t('shopEquipped')
+      else if (i === this.rodTier + 1) statusLine = t('shopCost', { cost: tier.cost })
+      else statusLine = t('fishingShopLocked')
+
+      const label = `${i + 1}. ${t('fishingShopDepthLabel', { depth: tier.maxDepth })}\n${statusLine}`
+      const row = this.add
+        .text(GAME_WIDTH / 2, rowY, label, { ...style, fontSize: '13px', align: 'center' })
+        .setOrigin(0.5, 0)
+      if (i === this.rodTier + 1) {
+        row.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.purchaseUpgrade())
+      }
+      this.shopTexts.push(row)
+      rowY += row.height + 16
+    })
   }
 
   handlePointerDown(currentlyOver = []) {
@@ -274,11 +351,11 @@ export class FishingScene extends Phaser.Scene {
 
     this.readyTitleText.setVisible(false)
     this.readyDescText.setVisible(false)
-    this.upgradeButtonBg.setVisible(false)
-    this.upgradeButtonText.setVisible(false)
     this.readyCtaText.setVisible(false)
     this.hubButtonBg.setVisible(false)
     this.hubButtonText.setVisible(false)
+    this.shopButtonBg.setVisible(false)
+    this.shopButtonText.setVisible(false)
 
     this.timerText.setVisible(true)
 
