@@ -7,12 +7,18 @@ import { t } from './i18n.js'
 const FISHING_COINS_KEY = 'fishing-coins'
 const FISHING_BEST_KEY = 'fishing-best-catch'
 const FISHING_ROD_TIER_KEY = 'fishing-rod-tier'
+const FISHING_HOOK_TIER_KEY = 'fishing-hook-tier'
+const FISHING_OWNED_BOATS_KEY = 'fishing-owned-boats'
+const FISHING_EQUIPPED_BOAT_KEY = 'fishing-equipped-boat'
+const FISHING_TOTAL_ROUNDS_KEY = 'fishing-total-rounds'
+const FISHING_RARE_CAUGHT_KEY = 'fishing-rare-caught'
 
 const DOCK_Y = 70
 const DESCEND_SPEED = 170 // px/sec
 const ASCEND_SPEED = 230 // 내려가는 것보다 빨리 올라와야 손맛이 산다
-const HOOK_CATCH_RADIUS = 28
 const ROUND_DURATION_MS = 50000
+const SWAY_FREQ = 0.9 // 배 흔들림 속도(파도 자체 애니메이션보다 조금 느리게)
+const SWAY_BASE_AMPLITUDE = 20 // px — sway 배율 1.0(나룻배) 기준 최대 흔들림 폭
 
 // 단계가 오를수록 더 깊이 내려갈 수 있어서(=더 희귀/고가치 물고기 구간에 도달) 코인으로 강화한다.
 const UPGRADE_TIERS = [
@@ -21,6 +27,27 @@ const UPGRADE_TIERS = [
   { cost: 100, maxDepth: 420 },
   { cost: 220, maxDepth: 520 },
   { cost: 400, maxDepth: 560 },
+]
+
+// 낚싯바늘 — 등급이 오를수록 낚는 반경(catch radius)이 넓어진다. 코인으로 순차 구매.
+const HOOK_TIERS = [
+  { id: 'white', nameKey: 'fishingHookWhite', cost: 0, radius: 28, color: 0xdddddd },
+  { id: 'blue', nameKey: 'fishingHookBlue', cost: 50, radius: 32, color: 0x4fc3f7 },
+  { id: 'red', nameKey: 'fishingHookRed', cost: 120, radius: 36, color: 0xff5252 },
+  { id: 'rainbow', nameKey: 'fishingHookRainbow', cost: 250, radius: 42, color: 'rainbow' },
+  { id: 'gold', nameKey: 'fishingHookGold', cost: 450, radius: 48, color: 0xffd700 },
+]
+
+// 배 — 앞 4단계는 코인 순차 구매, 뒤 2종은 코인이 아니라 누적 스탯으로 언락되는 히든
+// 아이템(로켓 상점의 unlock 패턴과 동일한 개념). sway가 낮을수록 파도에 덜 흔들려서
+// 낚싯줄 조준이 더 안정적이다 — 배를 살 실질적인 이유.
+const BOAT_TIERS = [
+  { id: 'rowboat', nameKey: 'fishingBoatRowboat', cost: 0, sway: 1.0 },
+  { id: 'motorboat', nameKey: 'fishingBoatMotorboat', cost: 60, sway: 0.8 },
+  { id: 'bigboat', nameKey: 'fishingBoatBigboat', cost: 150, sway: 0.6 },
+  { id: 'ferry', nameKey: 'fishingBoatFerry', cost: 300, sway: 0.45 },
+  { id: 'warship', nameKey: 'fishingBoatWarship', unlock: { totalRounds: 20 }, sway: 0.3 },
+  { id: 'goldenyacht', nameKey: 'fishingBoatGoldenYacht', unlock: { rareCaught: 30 }, sway: 0.2 },
 ]
 
 // 이모지 대신 로켓/구름/운석처럼 이 코드베이스의 방식대로 Graphics로 직접 그린 실루엣을 쓴다
@@ -42,12 +69,19 @@ export class FishingScene extends Phaser.Scene {
     this.totalCoins = Number(localStorage.getItem(FISHING_COINS_KEY) || 0)
     this.bestCatch = Number(localStorage.getItem(FISHING_BEST_KEY) || 0)
     this.rodTier = Number(localStorage.getItem(FISHING_ROD_TIER_KEY) || 0)
+    this.hookTier = Number(localStorage.getItem(FISHING_HOOK_TIER_KEY) || 0)
+    this.equippedBoatId = localStorage.getItem(FISHING_EQUIPPED_BOAT_KEY) || 'rowboat'
+    this.totalRounds = Number(localStorage.getItem(FISHING_TOTAL_ROUNDS_KEY) || 0)
+    this.rareCaught = Number(localStorage.getItem(FISHING_RARE_CAUGHT_KEY) || 0)
     this.holding = false
     this.hookY = DOCK_Y
     this.tripValue = 0
     this.roundCoins = 0
     this.roundTimeLeft = ROUND_DURATION_MS
     this.shopTexts = null
+    this.shopTab = 'rod'
+    this.boatSwayX = 0
+    this.hueRotation = 0
 
     this.drawBackground()
     this.createUI()
@@ -95,10 +129,12 @@ export class FishingScene extends Phaser.Scene {
     const bg = this.add.graphics()
     bg.fillGradientStyle(0x1e5a8a, 0x1e5a8a, 0x02121f, 0x02121f, 1)
     bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT)
-    // 배를 나중에 추가하면 이 파도 위에서 출렁이게 하고, 그 흔들림을 낚싯줄에도 전달해서
-    // 난이도 요소로 쓸 수 있게 될 것. 지금은 정적인 부두 막대 대신 움직이는 수면을 보여준다.
     this.waveGraphics = this.add.graphics()
     this.drawWave()
+
+    // 장착한 배가 파도를 타고 좌우로(살짝 위아래로도) 흔들린다 — update()에서 매 프레임
+    // 위치만 갱신하고, 텍스처는 상점에서 배를 바꿀 때(closeShop)만 다시 굽는다.
+    this.boatSprite = this.add.image(GAME_WIDTH / 2, DOCK_Y, this.ensureBoatTexture(this.equippedBoatId)).setOrigin(0.5, 0.7)
   }
 
   drawWave() {
@@ -246,11 +282,84 @@ export class FishingScene extends Phaser.Scene {
     this.renderShop()
   }
 
+  purchaseHook() {
+    if (this.state !== 'shop') return
+    const nextTier = this.hookTier + 1
+    if (nextTier >= HOOK_TIERS.length) return
+    const cost = HOOK_TIERS[nextTier].cost
+    if (this.totalCoins < cost) {
+      this.showFloatPopup(GAME_WIDTH / 2, 60, t('shopNotEnoughCoins'), '#ff6b4a')
+      return
+    }
+    this.totalCoins -= cost
+    this.hookTier = nextTier
+    localStorage.setItem(FISHING_COINS_KEY, String(this.totalCoins))
+    localStorage.setItem(FISHING_HOOK_TIER_KEY, String(this.hookTier))
+    this.renderShop()
+  }
+
+  getEquippedHook() {
+    return HOOK_TIERS[this.hookTier]
+  }
+
+  getEquippedBoat() {
+    return BOAT_TIERS.find((b) => b.id === this.equippedBoatId) || BOAT_TIERS[0]
+  }
+
+  isBoatOwned(id) {
+    if (id === 'rowboat') return true
+    const owned = JSON.parse(localStorage.getItem(FISHING_OWNED_BOATS_KEY) || '[]')
+    return owned.includes(id)
+  }
+
+  setBoatOwned(id) {
+    const owned = JSON.parse(localStorage.getItem(FISHING_OWNED_BOATS_KEY) || '[]')
+    if (!owned.includes(id)) owned.push(id)
+    localStorage.setItem(FISHING_OWNED_BOATS_KEY, JSON.stringify(owned))
+  }
+
+  isBoatUnlockMet(boat) {
+    if (!boat.unlock) return true
+    const roundsOk = boat.unlock.totalRounds === undefined || this.totalRounds >= boat.unlock.totalRounds
+    const rareOk = boat.unlock.rareCaught === undefined || this.rareCaught >= boat.unlock.rareCaught
+    return roundsOk && rareOk
+  }
+
+  // 이미 소유한 배는 언제든 다시 장착할 수 있고(로켓 스킨처럼), 안 가진 배는 코인 순차
+  // 구매(이전 단계까지 다 있어야 함) 또는 히든 조건 충족 시 무료 획득으로 갖게 된다.
+  selectBoat(index) {
+    if (this.state !== 'shop') return
+    const boat = BOAT_TIERS[index]
+    if (this.equippedBoatId === boat.id) return
+
+    if (!this.isBoatOwned(boat.id)) {
+      if (boat.unlock) {
+        if (!this.isBoatUnlockMet(boat)) return
+        this.setBoatOwned(boat.id)
+      } else {
+        const prevBoat = BOAT_TIERS[index - 1]
+        if (prevBoat && !this.isBoatOwned(prevBoat.id)) return
+        if (this.totalCoins < boat.cost) {
+          this.showFloatPopup(GAME_WIDTH / 2, 60, t('shopNotEnoughCoins'), '#ff6b4a')
+          return
+        }
+        this.totalCoins -= boat.cost
+        localStorage.setItem(FISHING_COINS_KEY, String(this.totalCoins))
+        this.setBoatOwned(boat.id)
+      }
+    }
+
+    this.equippedBoatId = boat.id
+    localStorage.setItem(FISHING_EQUIPPED_BOAT_KEY, boat.id)
+    this.boatSprite.setTexture(this.ensureBoatTexture(boat.id))
+    this.renderShop()
+  }
+
   maxDepthForTier() {
     return UPGRADE_TIERS[this.rodTier].maxDepth
   }
 
-  // ---------- 상점 (로켓 게임의 openShop/closeShop/renderShop 패턴 재사용) ----------
+  // ---------- 상점 (로켓 게임의 openShop/closeShop/renderShop + 탭 패턴 재사용) ----------
 
   openShop() {
     if (this.state !== 'ready') return
@@ -306,28 +415,107 @@ export class FishingScene extends Phaser.Scene {
       .on('pointerdown', () => this.closeShop())
     backButton.isUiButton = true
     this.shopTexts.push(backButton)
-    cursorY += title.height + 24
+    cursorY += title.height + 18
+
+    // 탭 3개(낚싯대/배/바늘) — 로켓 상점의 2탭 토글과 같은 방식.
+    const tabWidth = 96
+    const tabHeight = 26
+    const tabCenterY = cursorY + tabHeight / 2
+    const tabDefs = [
+      { key: 'rod', label: t('fishingShopTabRod'), x: GAME_WIDTH / 2 - tabWidth - 4 },
+      { key: 'boat', label: t('fishingShopTabBoat'), x: GAME_WIDTH / 2 },
+      { key: 'hook', label: t('fishingShopTabHook'), x: GAME_WIDTH / 2 + tabWidth + 4 },
+    ]
+    tabDefs.forEach((tab) => {
+      const active = this.shopTab === tab.key
+      const bg = this.add
+        .rectangle(tab.x, tabCenterY, tabWidth, tabHeight, active ? 0x3a5fd9 : 0x1a1a2e, active ? 0.95 : 0.5)
+        .setStrokeStyle(2, active ? 0x8fe3ff : 0x444466)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => {
+          if (this.shopTab !== tab.key) {
+            this.shopTab = tab.key
+            this.renderShop()
+          }
+        })
+      this.shopTexts.push(bg)
+      const label = this.add
+        .text(tab.x, tabCenterY, tab.label, { ...style, fontSize: '12px', color: active ? '#ffffff' : '#d6d9f5' })
+        .setOrigin(0.5)
+      this.shopTexts.push(label)
+    })
+    cursorY += tabHeight + 20
 
     let rowY = cursorY
-    UPGRADE_TIERS.forEach((tier, i) => {
-      let statusLine
-      // 이미 지나온 단계는 탭해도 아무 반응이 없으니, "(선택)"을 붙이는 공용 shopOwned
-      // 대신 그 뉘앙스가 없는 낚시 전용 문구를 쓴다.
-      if (i < this.rodTier) statusLine = t('fishingShopPastTier')
-      else if (i === this.rodTier) statusLine = t('shopEquipped')
-      else if (i === this.rodTier + 1) statusLine = t('shopCost', { cost: tier.cost })
-      else statusLine = t('fishingShopLocked')
+    if (this.shopTab === 'rod') {
+      UPGRADE_TIERS.forEach((tier, i) => {
+        let statusLine
+        // 이미 지나온 단계는 탭해도 아무 반응이 없으니, "(선택)"을 붙이는 공용 shopOwned
+        // 대신 그 뉘앙스가 없는 낚시 전용 문구를 쓴다.
+        if (i < this.rodTier) statusLine = t('fishingShopPastTier')
+        else if (i === this.rodTier) statusLine = t('shopEquipped')
+        else if (i === this.rodTier + 1) statusLine = t('shopCost', { cost: tier.cost })
+        else statusLine = t('fishingShopLocked')
 
-      const label = `${i + 1}. ${t('fishingShopDepthLabel', { depth: tier.maxDepth })}\n${statusLine}`
-      const row = this.add
-        .text(GAME_WIDTH / 2, rowY, label, { ...style, fontSize: '13px', align: 'center' })
-        .setOrigin(0.5, 0)
-      if (i === this.rodTier + 1) {
-        row.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.purchaseUpgrade())
-      }
-      this.shopTexts.push(row)
-      rowY += row.height + 16
-    })
+        const label = `${i + 1}. ${t('fishingShopDepthLabel', { depth: tier.maxDepth })}\n${statusLine}`
+        const row = this.add
+          .text(GAME_WIDTH / 2, rowY, label, { ...style, fontSize: '13px', align: 'center' })
+          .setOrigin(0.5, 0)
+        if (i === this.rodTier + 1) {
+          row.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.purchaseUpgrade())
+        }
+        this.shopTexts.push(row)
+        rowY += row.height + 16
+      })
+    } else if (this.shopTab === 'boat') {
+      BOAT_TIERS.forEach((boat, i) => {
+        const owned = this.isBoatOwned(boat.id)
+        const equipped = this.equippedBoatId === boat.id
+        let statusLine
+        if (equipped) statusLine = t('shopEquipped')
+        else if (owned) statusLine = t('fishingShopPastTier')
+        else if (boat.unlock) {
+          if (this.isBoatUnlockMet(boat)) statusLine = t('fishingBoatClaim')
+          else if (boat.unlock.totalRounds !== undefined) {
+            statusLine = t('fishingBoatLockedRounds', { required: boat.unlock.totalRounds, current: this.totalRounds })
+          } else {
+            statusLine = t('fishingBoatLockedRare', { required: boat.unlock.rareCaught, current: this.rareCaught })
+          }
+        } else statusLine = t('shopCost', { cost: boat.cost })
+
+        const label = `${i + 1}. ${t(boat.nameKey)}\n${statusLine}`
+        const row = this.add
+          .text(GAME_WIDTH / 2, rowY, label, { ...style, fontSize: '13px', align: 'center' })
+          .setOrigin(0.5, 0)
+          .setInteractive({ useHandCursor: true })
+          .on('pointerdown', () => this.selectBoat(i))
+        this.shopTexts.push(row)
+
+        const iconY = rowY + row.height + 18
+        const previewKey = this.ensureBoatTexture(boat.id)
+        const icon = this.add.image(GAME_WIDTH / 2, iconY, previewKey).setOrigin(0.5)
+        this.shopTexts.push(icon)
+        rowY = iconY + 24
+      })
+    } else {
+      HOOK_TIERS.forEach((hook, i) => {
+        let statusLine
+        if (i < this.hookTier) statusLine = t('fishingShopPastTier')
+        else if (i === this.hookTier) statusLine = t('shopEquipped')
+        else if (i === this.hookTier + 1) statusLine = t('shopCost', { cost: hook.cost })
+        else statusLine = t('fishingShopLocked')
+
+        const label = `${i + 1}. ${t(hook.nameKey)} (${t('fishingHookRadiusLabel', { radius: hook.radius })})\n${statusLine}`
+        const row = this.add
+          .text(GAME_WIDTH / 2, rowY, label, { ...style, fontSize: '13px', align: 'center' })
+          .setOrigin(0.5, 0)
+        if (i === this.hookTier + 1) {
+          row.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.purchaseHook())
+        }
+        this.shopTexts.push(row)
+        rowY += row.height + 16
+      })
+    }
   }
 
   handlePointerDown(currentlyOver = []) {
@@ -394,8 +582,15 @@ export class FishingScene extends Phaser.Scene {
     circle.visual = this.add.image(startX, y, textureKey).setOrigin(0.5).setFlipX(!fromLeft)
   }
 
+  // 상어(좌우로 드리프트하는 위협)와 성게(제자리에 거의 머무는 지형형 방해물)를 섞어서
+  // 장애물에 변화를 준다.
   spawnHazard() {
     if (this.state !== 'playing') return
+    if (Math.random() < 0.4) this.spawnUrchin()
+    else this.spawnShark()
+  }
+
+  spawnShark() {
     const fromLeft = Math.random() < 0.5
     const startX = fromLeft ? -30 : GAME_WIDTH + 30
     const speed = 150
@@ -409,8 +604,27 @@ export class FishingScene extends Phaser.Scene {
     circle.body.allowGravity = false
     circle.body.setImmovable(true)
     circle.body.setVelocity(vx, 0)
+    circle.hazardType = 'shark'
     const textureKey = this.ensureSharkTexture()
     circle.visual = this.add.image(startX, y, textureKey).setOrigin(0.5).setFlipX(!fromLeft)
+  }
+
+  spawnUrchin() {
+    const x = Phaser.Math.Between(40, GAME_WIDTH - 40)
+    const hazardMin = Math.min(200, this.maxDepthForTier())
+    const y = Phaser.Math.Between(hazardMin, this.maxDepthForTier())
+
+    const circle = this.add.circle(x, y, 15, 0x000000, 0)
+    this.physics.add.existing(circle)
+    this.hazardGroup.add(circle)
+    circle.body.allowGravity = false
+    circle.body.setImmovable(true)
+    circle.body.setVelocity(0, 0)
+    circle.hazardType = 'urchin'
+    circle.bobPhase = Math.random() * Math.PI * 2
+    circle.spawnTime = this.time.now
+    const textureKey = this.ensureUrchinTexture()
+    circle.visual = this.add.image(x, y, textureKey).setOrigin(0.5)
   }
 
   // 물고기/상어 실루엣을 로켓/구름/운석과 같은 방식(Graphics로 한 번 그려서 텍스처로 굽고 재사용)으로
@@ -494,25 +708,156 @@ export class FishingScene extends Phaser.Scene {
       g.lineBetween(gx, cy - h * 0.25, gx - 2, cy + h * 0.25)
     }
 
-    // 입을 벌린 모습 — 위턱/아래턱 사이에 붉은 입안과 이빨을 넣어서 위협적으로 보이게 한다.
-    const jawBaseX = cx + w / 2 - 4
-    const jawTipX = cx + w / 2 + 16
-    g.fillStyle(0x7a1f1f, 1)
-    g.fillTriangle(jawBaseX, cy - 1, jawBaseX, cy + 1, jawTipX - 4, cy)
-    g.fillStyle(0x4a5a63, 1)
-    g.fillTriangle(jawBaseX, cy - 9, jawTipX, cy - 1, jawBaseX, cy - 1)
+    // 단순한 주둥이 — 입을 벌린 모습(턱/이빨/붉은 입안)을 넣어봤는데 오히려 이상해 보인다는
+    // 피드백을 받아서 원래의 단순한 흰 주둥이 삼각형으로 되돌렸다.
     g.fillStyle(0xe8e8e8, 1)
-    g.fillTriangle(jawBaseX, cy + 1, jawTipX, cy + 2, jawBaseX, cy + 9)
-    g.fillStyle(0xffffff, 1)
-    for (let i = 0; i < 3; i++) {
-      const tx = jawBaseX + 3 + i * 5
-      g.fillTriangle(tx, cy - 1.5, tx + 3, cy - 1.5, tx + 1.5, cy + 1.5)
-    }
+    g.fillTriangle(cx + w / 2 - 6, cy - 4, cx + w / 2 + 14, cy, cx + w / 2 - 6, cy + 8)
     g.fillStyle(0x0a0a0a, 1)
     g.fillCircle(cx + w / 2 - 14, cy - 6, 3)
     g.generateTexture(key, canvasW, canvasH)
     g.destroy()
     return key
+  }
+
+  // 성게 — 상어와 달리 거의 제자리에 머무는(위아래로만 살짝 흔들리는) 지형형 방해물이라
+  // 다른 종류의 긴장감을 준다. 어두운 보라색 몸통 + 사방으로 뻗는 가시.
+  ensureUrchinTexture() {
+    const key = 'fishing-hazard-urchin'
+    if (this.textures.exists(key)) return key
+    const size = 46
+    const cx = size / 2
+    const cy = size / 2
+    const r = 12
+    const g = this.add.graphics()
+    g.lineStyle(2, 0x1f0f28, 1)
+    const spikeCount = 12
+    for (let i = 0; i < spikeCount; i++) {
+      const ang = ((Math.PI * 2) / spikeCount) * i
+      g.lineBetween(cx + Math.cos(ang) * r * 0.7, cy + Math.sin(ang) * r * 0.7, cx + Math.cos(ang) * (r + 9), cy + Math.sin(ang) * (r + 9))
+    }
+    g.fillStyle(0x3d1f4d, 1)
+    g.fillCircle(cx, cy, r)
+    g.fillStyle(0x6b3fa0, 0.5)
+    g.fillCircle(cx - 4, cy - 4, r * 0.4)
+    g.generateTexture(key, size, size)
+    g.destroy()
+    return key
+  }
+
+  // 배 6종을 로켓/구름처럼 Graphics로 직접 그려서 굽는다 — 뱃머리가 +x(오른쪽)를 향한
+  // 옆모습 실루엣. 등급이 오를수록 선체가 커지고 캐빈/돛대/포탑 등 디테일이 늘어난다.
+  ensureBoatTexture(boatId) {
+    const key = `fishing-boat-${boatId}`
+    if (this.textures.exists(key)) return key
+    const canvasW = 90
+    const canvasH = 56
+    const cx = canvasW / 2
+    const cy = canvasH / 2 + 8
+    const g = this.add.graphics()
+    this.drawBoatHull(g, boatId, cx, cy)
+    g.generateTexture(key, canvasW, canvasH)
+    g.destroy()
+    return key
+  }
+
+  drawBoatHull(g, boatId, cx, cy) {
+    if (boatId === 'rowboat') {
+      g.fillStyle(0x8b5a2b, 1)
+      g.fillPoints(
+        [
+          { x: cx - 16, y: cy + 4 },
+          { x: cx - 14, y: cy - 4 },
+          { x: cx + 12, y: cy - 4 },
+          { x: cx + 18, y: cy + 2 },
+          { x: cx + 12, y: cy + 4 },
+        ],
+        true,
+      )
+    } else if (boatId === 'motorboat') {
+      g.fillStyle(0xa0522d, 1)
+      g.fillPoints(
+        [
+          { x: cx - 20, y: cy + 5 },
+          { x: cx - 18, y: cy - 5 },
+          { x: cx + 16, y: cy - 5 },
+          { x: cx + 23, y: cy + 2 },
+          { x: cx + 16, y: cy + 5 },
+        ],
+        true,
+      )
+      g.fillStyle(0xf0f0f0, 1)
+      g.fillRect(cx - 6, cy - 11, 14, 7)
+    } else if (boatId === 'bigboat') {
+      g.fillStyle(0x6b4423, 1)
+      g.fillPoints(
+        [
+          { x: cx - 26, y: cy + 6 },
+          { x: cx - 23, y: cy - 6 },
+          { x: cx + 21, y: cy - 6 },
+          { x: cx + 29, y: cy + 3 },
+          { x: cx + 21, y: cy + 6 },
+        ],
+        true,
+      )
+      g.fillStyle(0xf0f0f0, 1)
+      g.fillRect(cx - 10, cy - 15, 20, 9)
+      g.lineStyle(2, 0x333333, 1)
+      g.lineBetween(cx + 2, cy - 15, cx + 2, cy - 24)
+    } else if (boatId === 'ferry') {
+      g.fillStyle(0x1b6ca8, 1)
+      g.fillPoints(
+        [
+          { x: cx - 33, y: cy + 7 },
+          { x: cx - 30, y: cy - 7 },
+          { x: cx + 28, y: cy - 7 },
+          { x: cx + 36, y: cy + 4 },
+          { x: cx + 28, y: cy + 7 },
+        ],
+        true,
+      )
+      g.fillStyle(0xffffff, 1)
+      g.fillRect(cx - 20, cy - 17, 42, 10)
+      g.fillRect(cx - 10, cy - 25, 24, 8)
+      g.fillStyle(0x4fc3f7, 0.8)
+      for (let i = 0; i < 4; i++) g.fillCircle(cx - 14 + i * 8, cy - 13, 1.6)
+    } else if (boatId === 'warship') {
+      g.fillStyle(0x5a6b74, 1)
+      g.fillPoints(
+        [
+          { x: cx - 32, y: cy + 6 },
+          { x: cx - 28, y: cy - 6 },
+          { x: cx + 8, y: cy - 6 },
+          { x: cx + 34, y: cy + 1 },
+          { x: cx + 8, y: cy + 6 },
+        ],
+        true,
+      )
+      g.fillStyle(0x3a4750, 1)
+      g.fillRect(cx - 14, cy - 16, 20, 10)
+      g.fillRect(cx + 10, cy - 11, 10, 5)
+      g.fillCircle(cx + 20, cy - 9, 2)
+      g.lineStyle(2, 0x222222, 1)
+      g.lineBetween(cx - 4, cy - 16, cx - 4, cy - 26)
+    } else {
+      // goldenyacht
+      g.fillStyle(0xfff3c4, 1)
+      g.fillPoints(
+        [
+          { x: cx - 30, y: cy + 6 },
+          { x: cx - 27, y: cy - 6 },
+          { x: cx + 25, y: cy - 6 },
+          { x: cx + 33, y: cy + 3 },
+          { x: cx + 25, y: cy + 6 },
+        ],
+        true,
+      )
+      g.fillStyle(0xffd700, 1)
+      g.fillRect(cx - 12, cy - 15, 22, 9)
+      g.lineStyle(2, 0xffffff, 1)
+      g.lineBetween(cx + 2, cy - 15, cx + 2, cy - 27)
+      g.fillStyle(0xffffff, 1)
+      g.fillTriangle(cx + 2, cy - 27, cx + 2, cy - 15, cx + 14, cy - 18)
+    }
   }
 
   destroyFish(fish) {
@@ -528,6 +873,10 @@ export class FishingScene extends Phaser.Scene {
   catchFish(fish) {
     fish.caught = true
     this.tripValue += fish.fishType.value
+    if (fish.fishType.id === 'rare') {
+      this.rareCaught += 1
+      localStorage.setItem(FISHING_RARE_CAUGHT_KEY, String(this.rareCaught))
+    }
     this.playCatchSound()
     this.showFloatPopup(fish.x, fish.y, `+${fish.fishType.value}`, '#8fe3ff')
     this.destroyFish(fish)
@@ -535,7 +884,7 @@ export class FishingScene extends Phaser.Scene {
 
   hitHazard(hazard) {
     if (this.tripValue > 0) {
-      this.showFloatPopup(GAME_WIDTH / 2, this.hookY, t('fishingSnap'), '#ff6b4a')
+      this.showFloatPopup(GAME_WIDTH / 2 + this.boatSwayX, this.hookY, t('fishingSnap'), '#ff6b4a')
     }
     this.tripValue = 0
     this.hookY = DOCK_Y
@@ -547,7 +896,7 @@ export class FishingScene extends Phaser.Scene {
     this.totalCoins += this.tripValue
     this.roundCoins += this.tripValue
     localStorage.setItem(FISHING_COINS_KEY, String(this.totalCoins))
-    this.showFloatPopup(GAME_WIDTH / 2, DOCK_Y - 20, t('fishingBankPopup', { coins: this.tripValue }), '#ffe066')
+    this.showFloatPopup(GAME_WIDTH / 2 + this.boatSwayX, DOCK_Y - 20, t('fishingBankPopup', { coins: this.tripValue }), '#ffe066')
     this.playBankSound()
     this.tripValue = 0
   }
@@ -555,6 +904,8 @@ export class FishingScene extends Phaser.Scene {
   endRound() {
     if (this.tripValue > 0) this.bankTrip()
     this.state = 'roundOver'
+    this.totalRounds += 1
+    localStorage.setItem(FISHING_TOTAL_ROUNDS_KEY, String(this.totalRounds))
     this.fishSpawnTimer.paused = true
     this.hazardSpawnTimer.paused = true
     this.bubbleSpawnTimer.paused = true
@@ -667,9 +1018,15 @@ export class FishingScene extends Phaser.Scene {
     const dt = delta / 1000
 
     // 파도는 대기 화면에서도 계속 움직이게 해서 항상 생동감 있어 보이게 한다(플레이 중에만
-    // 도는 아래 로직과 분리해서 이 앞에 둔다).
+    // 도는 아래 로직과 분리해서 이 앞에 둔다). 배도 마찬가지 — 장착한 배의 sway 배율이
+    // 낮을수록(좋은 배일수록) 덜 흔들린다.
     this.wavePhase += dt * 1.6
     this.drawWave()
+    this.boatSwayX = Math.sin(this.wavePhase * SWAY_FREQ) * SWAY_BASE_AMPLITUDE * this.getEquippedBoat().sway
+    this.boatSprite.setPosition(GAME_WIDTH / 2 + this.boatSwayX, DOCK_Y + Math.sin(this.wavePhase * 1.3) * 2)
+    // 대기/상점 화면에서는 배가 표지 제목/설명 텍스트 자리와 겹쳐서 그 뒤에 완전히 가려져
+    // 보이지 않는 문제가 있었다 — 플레이 중에만 보여줘서 확실히 보이게 한다.
+    this.boatSprite.setVisible(this.state === 'playing')
 
     if (this.state !== 'playing') return
     const maxDepth = this.maxDepthForTier()
@@ -680,15 +1037,26 @@ export class FishingScene extends Phaser.Scene {
       this.hookY = Math.max(this.hookY - ASCEND_SPEED * dt, DOCK_Y)
     }
 
+    // 배가 흔들리면 낚싯줄/바늘도 통째로 같이 좌우로 움직인다 — 조작(홀드/릴리즈)은
+    // 그대로 수직 이동뿐이고, 흔들림은 환경 난이도로만 작용한다.
+    const anchorX = GAME_WIDTH / 2 + this.boatSwayX
+    const hook = this.getEquippedHook()
+
     this.lineGraphics.clear()
     this.lineGraphics.lineStyle(2, 0xe8f4ff, 0.85)
-    this.lineGraphics.lineBetween(GAME_WIDTH / 2, DOCK_Y, GAME_WIDTH / 2, this.hookY)
+    this.lineGraphics.lineBetween(anchorX, DOCK_Y, anchorX, this.hookY)
 
-    // 낚싯바늘 — 단순 원 대신 낚싯바늘 특유의 J자 곡선 + 미늘로 그린다.
-    const hx = GAME_WIDTH / 2
+    // 낚싯바늘 — 단순 원 대신 낚싯바늘 특유의 J자 곡선 + 미늘로 그린다. 등급별 색(무지개는
+    // 시간에 따라 색상환을 도는 특수 효과)으로 구분한다.
+    let hookColor = hook.color
+    if (hookColor === 'rainbow') {
+      this.hueRotation = (this.hueRotation + dt * 0.3) % 1
+      hookColor = Phaser.Display.Color.HSVToRGB(this.hueRotation, 1, 1).color
+    }
+    const hx = anchorX
     const hy = this.hookY
     this.hookGraphics.clear()
-    this.hookGraphics.lineStyle(2.5, 0xdddddd, 1)
+    this.hookGraphics.lineStyle(2.5, hookColor, 1)
     this.hookGraphics.beginPath()
     this.hookGraphics.moveTo(hx, hy - 12)
     this.hookGraphics.lineTo(hx, hy - 3)
@@ -710,7 +1078,7 @@ export class FishingScene extends Phaser.Scene {
     })
 
     if (this.tripValue > 0) {
-      this.tripText.setText(`+${this.tripValue}`).setPosition(GAME_WIDTH / 2 + 22, this.hookY).setVisible(true)
+      this.tripText.setText(`+${this.tripValue}`).setPosition(anchorX + 22, this.hookY).setVisible(true)
     } else {
       this.tripText.setVisible(false)
     }
@@ -720,18 +1088,26 @@ export class FishingScene extends Phaser.Scene {
       if (fish.x < -60 || fish.x > GAME_WIDTH + 60) this.destroyFish(fish)
     })
     this.hazardGroup.children.each((hazard) => {
-      hazard.visual.setPosition(hazard.x, hazard.y)
-      if (hazard.x < -60 || hazard.x > GAME_WIDTH + 60) this.destroyHazard(hazard)
+      if (hazard.hazardType === 'urchin') {
+        // 성게는 실제 판정 좌표(hazard.x/y)는 고정한 채 시각적으로만 위아래로 살짝
+        // 흔들어서, 아케이드 물리 스텝이 매 프레임 위치를 되돌리는 것과 충돌하지 않게 한다.
+        const bobY = hazard.y + Math.sin(this.wavePhase * 2 + hazard.bobPhase) * 4
+        hazard.visual.setPosition(hazard.x, bobY)
+        if (time - hazard.spawnTime > 8000) this.destroyHazard(hazard)
+      } else {
+        hazard.visual.setPosition(hazard.x, hazard.y)
+        if (hazard.x < -60 || hazard.x > GAME_WIDTH + 60) this.destroyHazard(hazard)
+      }
     })
 
     this.fishGroup.children.each((fish) => {
       if (fish.caught) return
-      const dist = Phaser.Math.Distance.Between(GAME_WIDTH / 2, this.hookY, fish.x, fish.y)
-      if (dist < HOOK_CATCH_RADIUS) this.catchFish(fish)
+      const dist = Phaser.Math.Distance.Between(anchorX, this.hookY, fish.x, fish.y)
+      if (dist < hook.radius) this.catchFish(fish)
     })
     this.hazardGroup.children.each((hazard) => {
-      const dist = Phaser.Math.Distance.Between(GAME_WIDTH / 2, this.hookY, hazard.x, hazard.y)
-      if (dist < HOOK_CATCH_RADIUS) this.hitHazard(hazard)
+      const dist = Phaser.Math.Distance.Between(anchorX, this.hookY, hazard.x, hazard.y)
+      if (dist < hook.radius) this.hitHazard(hazard)
     })
 
     if (!this.holding && this.hookY <= DOCK_Y + 0.5 && this.tripValue > 0) {
